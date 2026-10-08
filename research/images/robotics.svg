@@ -1,0 +1,285 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  机器人运行框架的通用研究示意，突出已有实机结果的 VLA 与学习式全身控制路线。
+  建图与定位、导航、操作动作生成和全身运动跟踪分别说明，可协同、合并或按任务省略。
+  方法名称是实现示例，不代表 Optimus、Gemini Robotics 等产品的已确认内部实现。
+  测量反馈并行分发；图中不包含离线数据采集、训练和仿真流程。
+  核实与制图日期：2026-10-08。
+-->
+<svg xmlns="http://www.w3.org/2000/svg"
+     width="1600" height="1860" viewBox="0 0 1600 1860"
+     role="img" aria-labelledby="diagram-title diagram-description">
+  <title id="diagram-title">机器人整体框架与多层闭环</title>
+  <desc id="diagram-description">
+    用户指令可由任务组织模块分配给导航或 VLA，也可直接输入 VLA。
+    传感器观测进入建图与定位功能，SLAM 联合估计环境地图和机器人位姿；
+    已有地图时也可以只做定位，地图和位姿供导航使用，不要求经过 VLA。
+    导航依据目的地、地图、定位和障碍物生成路线及机身运动目标；
+    VLA 依据图像、语言和自身状态生成操作动作或全身参考动作。
+    需要全身协调时，由学习式或传统全身控制器跟踪目标并维持平衡。
+    关节与接触控制、电驱控制将目标转为电气与机械输出。
+    传感器测量执行器、本体和环境，向各相关功能持续反馈。
+    固定机械臂可不经过导航或全身控制；直接力矩策略可不设置独立位置跟踪控制器，
+    但不能据此推断驱动反馈与保护消失。本图不声明任何产品使用全部图示模块。
+  </desc>
+
+  <!-- 统一视觉样式和箭头语义，功能框只负责内容与位置。 -->
+  <defs>
+    <marker id="command-head" markerWidth="9" markerHeight="9"
+            refX="8" refY="4.5" orient="auto" markerUnits="userSpaceOnUse">
+      <path d="M0 0 L9 4.5 L0 9 Z" fill="#34465A"/>
+    </marker>
+    <marker id="feedback-head" markerWidth="9" markerHeight="9"
+            refX="8" refY="4.5" orient="auto" markerUnits="userSpaceOnUse">
+      <path d="M0 0 L9 4.5 L0 9 Z" fill="#26766B"/>
+    </marker>
+    <marker id="physical-head" markerWidth="10" markerHeight="10"
+            refX="9" refY="5" orient="auto" markerUnits="userSpaceOnUse">
+      <path d="M0 0 L10 5 L0 10 Z" fill="#6C5D44"/>
+    </marker>
+  </defs>
+  <style>
+    text {
+      font-family: "PingFang SC", "Hiragino Sans GB", "Noto Sans CJK SC", "Microsoft YaHei", sans-serif;
+      fill: #203346;
+    }
+    .title { font-size: 34px; font-weight: 600; }
+    .subtitle { font-size: 20px; fill: #526477; }
+    .heading { font-size: 23px; font-weight: 600; }
+    .feedback-heading { font-size: 21px; font-weight: 600; }
+    .body { font-size: 19px; }
+    .small { font-size: 17px; }
+    .muted { fill: #586A7D; }
+    .traditional { fill: #77501F; }
+    .learning { fill: #2267A3; }
+    .emphasis { font-weight: 600; }
+    .feedback-text { fill: #26766B; }
+    .software-box { fill: #F5F8FC; stroke: #B9C8D8; stroke-width: 1.5; }
+    .learned-box { fill: #EEF5FC; stroke: #B9C8D8; stroke-width: 1.5; }
+    .feedback-box { fill: #F1F8F5; stroke: #A4C9BE; stroke-width: 1.5; }
+    .hardware-box { fill: #F4F1EB; stroke: #C8BCA9; stroke-width: 1.5; }
+    .rule { stroke: #D4DEE7; stroke-width: 1; }
+    .command { fill: none; stroke: #34465A; stroke-width: 2; marker-end: url(#command-head); }
+    .feedback { fill: none; stroke: #26766B; stroke-width: 2; stroke-dasharray: 7 5; marker-end: url(#feedback-head); }
+    .feedback-bus { fill: none; stroke: #26766B; stroke-width: 2; stroke-dasharray: 7 5; }
+    .physical { fill: none; stroke: #6C5D44; stroke-width: 3; marker-end: url(#physical-head); }
+    .source { font-size: 16px; fill: #2267A3; text-decoration: underline; }
+  </style>
+  <rect width="1600" height="1860" fill="#FFFFFF"/>
+
+  <text x="44" y="58" class="title">机器人整体框架与多层闭环</text>
+  <text x="44" y="95" class="subtitle">突出 VLA 与学习式全身控制的进展；建图定位、导航、关节伺服和电驱反馈分别说明</text>
+  <path d="M44 130 H90" class="command"/>
+  <text x="103" y="136" class="small">目标 / 控制指令</text>
+  <path d="M300 130 H346" class="feedback"/>
+  <text x="359" y="136" class="small">测量 / 观测反馈</text>
+  <path d="M560 130 H606" class="physical"/>
+  <text x="619" y="136" class="small">电气 / 机械作用</text>
+  <text x="912" y="136" class="small learning">蓝字：学习方法</text>
+  <text x="1130" y="136" class="small traditional">棕字：传统方法</text>
+
+  <!-- 右侧反馈分支独立工作，不要求数据先经过全部上层模型。 -->
+  <path d="M1516 1408 H1552 V241" class="feedback-bus"/>
+  <path d="M1552 241 H1516" class="feedback"/>
+  <path d="M1552 463 H1516" class="feedback"/>
+  <path d="M1552 713 H1516" class="feedback"/>
+  <path d="M1552 935 H1516" class="feedback"/>
+  <path d="M1552 1144 H1516" class="feedback"/>
+  <text transform="translate(1576 1100) rotate(-90)" class="small feedback-text">测量按需分发 · 各回路不必等待任务模型或视觉识别</text>
+
+  <!-- 任务组织是可选功能；简单语言指令不要求先经过独立的推理模型。 -->
+  <text x="44" y="211" class="heading">用户目标 / 自然语言指令</text>
+  <text x="44" y="244" class="small muted">简单指令也可直接输入 ③ VLA</text>
+  <path d="M44 270 H514" class="command"/>
+  <g id="task-module">
+    <rect x="514" y="174" width="530" height="134" rx="10" class="software-box"/>
+    <text x="536" y="207" class="heading">① 任务组织与进度判断</text>
+    <text x="536" y="242" class="body learning">可选：LLM / VLM 分解任务、调用技能</text>
+    <text x="536" y="274" class="body traditional">也可用状态机 / 行为树组织执行与重试</text>
+    <text x="536" y="298" class="small muted">输出：目的地、操作子任务与完成条件</text>
+  </g>
+  <g id="task-feedback">
+    <rect x="1140" y="174" width="376" height="134" rx="10" class="feedback-box"/>
+    <text x="1160" y="207" class="feedback-heading">任务反馈：完成 / 失败 / 重试</text>
+    <text x="1160" y="242" class="small">场景变化、物体状态、执行结果</text>
+    <text x="1160" y="274" class="small muted">观察进度，处理失败或请求干预</text>
+  </g>
+  <path d="M1140 241 H1044" class="feedback"/>
+  <path d="M550 308 V330 H254 V368" class="command"/>
+  <text x="278" y="358" class="body">去哪里</text>
+  <path d="M779 308 V368" class="command"/>
+  <text x="799" y="342" class="body">做什么 / 子任务指令</text>
+
+  <!-- 导航与操作并列，避免把全局路线规划画成每次操作的必经步骤。 -->
+  <g id="navigation-module">
+    <rect x="44" y="368" width="420" height="190" rx="10" class="software-box"/>
+    <text x="66" y="401" class="heading">② 导航与路线规划</text>
+    <text x="66" y="435" class="small">输入：目的地、地图 / 位姿、障碍物</text>
+    <text x="66" y="466" class="body traditional">成熟公开栈：地图、搜索、局部控制</text>
+    <text x="66" y="497" class="body learning">学习式局部导航已有实机结果</text>
+    <text x="66" y="531" class="small">输出：路线 / 路点、机身运动目标</text>
+    <text x="66" y="551" class="small muted">地图级路由 ≠ 操作中的短时轨迹</text>
+  </g>
+  <g id="action-module">
+    <rect x="514" y="368" width="530" height="190" rx="10" class="learned-box"/>
+    <text x="536" y="401" class="heading">③ 操作与短时动作生成（VLA）</text>
+    <text x="536" y="435" class="small">输入：图像 + 语言 + 自身状态（依模型而定）</text>
+    <text x="536" y="466" class="body learning emphasis">重点趋势：VLA 学习生成机器人动作</text>
+    <text x="536" y="497" class="body">输出：关节 / 末端 / 机身目标或动作片段</text>
+    <text x="536" y="531" class="small traditional">传统规划仍可参与约束、校验或执行</text>
+    <text x="536" y="551" class="small muted">VLA 是模型形式；模仿学习 / RL 是训练方法</text>
+  </g>
+  <g id="action-feedback">
+    <rect x="1140" y="368" width="376" height="190" rx="10" class="feedback-box"/>
+    <text x="1160" y="401" class="feedback-heading">环境与动作反馈</text>
+    <text x="1160" y="435" class="small">图像、物体与障碍物信息</text>
+    <text x="1160" y="466" class="small">关节 / 机身状态等</text>
+    <text x="1160" y="505" class="small muted">可用原始观测或感知 / 估计结果</text>
+    <text x="1160" y="537" class="small muted">重新观测，调整后续动作</text>
+  </g>
+  <path d="M1140 463 H1044" class="feedback"/>
+
+  <!-- 两种目标来源可在全身运动中协调；图示不要求所有模型采用这个接口。 -->
+  <path d="M254 558 V713 H514" class="command"/>
+  <text x="278" y="600" class="body">路线跟踪后的</text>
+  <text x="278" y="630" class="body">机身运动目标</text>
+  <text x="278" y="660" class="small muted">如移动速度 / 朝向</text>
+  <path d="M779 558 V634" class="command"/>
+  <text x="799" y="600" class="small">参考动作 / 目标（需全身协调时）</text>
+  <g id="whole-body-module">
+    <rect x="514" y="634" width="530" height="158" rx="10" class="learned-box"/>
+    <text x="536" y="667" class="heading">④ 全身运动跟踪与平衡控制</text>
+    <text x="536" y="702" class="small">输入：参考动作 + 关节 / IMU 等实际状态</text>
+    <text x="536" y="734" class="body learning emphasis">已有实机结果：学习式协调、跟踪与平衡</text>
+    <text x="536" y="765" class="small traditional">传统实现：动力学优化 / 全身控制等</text>
+    <text x="536" y="785" class="small muted">输出：协调后的关节目标或力矩</text>
+  </g>
+  <g id="whole-body-feedback">
+    <rect x="1140" y="634" width="376" height="158" rx="10" class="feedback-box"/>
+    <text x="1160" y="667" class="feedback-heading">运动反馈：协调与平衡</text>
+    <text x="1160" y="702" class="small">关节、IMU、接触与机身状态</text>
+    <text x="1160" y="734" class="small">跟踪误差、姿态与运动变化</text>
+    <text x="1160" y="773" class="small muted">估计 / 学习可参与状态处理</text>
+  </g>
+  <path d="M1140 713 H1044" class="feedback"/>
+  <path d="M779 792 V866" class="command"/>
+  <text x="799" y="833" class="small">关节目标 / 前馈 / 阻抗参数等</text>
+
+  <!-- 可省略的功能用明确的接口说明，不把完整链条当作所有产品的固定架构。 -->
+  <text x="66" y="840" class="heading muted">按任务与动作接口选择</text>
+  <text x="66" y="882" class="body">固定机械臂：</text>
+  <text x="66" y="914" class="body learning">③ 可直接进入 ⑤</text>
+  <text x="66" y="944" class="small muted">不必先走导航或全身控制</text>
+  <text x="66" y="1004" class="body">直接力矩策略：</text>
+  <text x="66" y="1036" class="body learning">③ / ④ 可直接进入 ⑥</text>
+  <text x="66" y="1066" class="small muted">不要求另设位置跟踪控制器</text>
+  <text x="66" y="1108" class="small muted">模块可以合并，图示不限定实现</text>
+
+  <!-- 关节伺服与接触调节不是同一件事，也不应都简称为 PID。 -->
+  <g id="joint-module">
+    <rect x="514" y="866" width="530" height="138" rx="10" class="software-box"/>
+    <text x="536" y="899" class="heading">⑤ 关节伺服与接触调节</text>
+    <text x="536" y="934" class="body traditional">位置 / 速度伺服：PD / PID + 可选前馈</text>
+    <text x="536" y="966" class="body traditional">接触调节：阻抗 / 力控制；<tspan class="learning">学习可参与</tspan></text>
+    <text x="536" y="993" class="small muted">输入：目标与实际状态；输出：力矩 / 电流目标</text>
+  </g>
+  <g id="joint-feedback">
+    <rect x="1140" y="866" width="376" height="138" rx="10" class="feedback-box"/>
+    <text x="1160" y="899" class="feedback-heading">关节反馈：跟踪与接触</text>
+    <text x="1160" y="934" class="small">实际角度、速度、力矩 / 接触力</text>
+    <text x="1160" y="966" class="small muted">直接测量或局部估计</text>
+    <text x="1160" y="993" class="small muted">不必等待物体识别或任务推理</text>
+  </g>
+  <path d="M1140 935 H1044" class="feedback"/>
+  <path d="M779 1004 V1078" class="command"/>
+  <text x="799" y="1045" class="small">力矩 / 电流目标（依驱动接口）</text>
+
+  <!-- 驱动算法是实现选择，实时反馈和故障响应则是必须解决的工程问题。 -->
+  <g id="drive-module">
+    <rect x="514" y="1078" width="530" height="132" rx="10" class="software-box"/>
+    <text x="536" y="1111" class="heading">⑥ 电驱控制与保护</text>
+    <text x="536" y="1146" class="body traditional">实现示例：电流 PI、换相 / FOC</text>
+    <text x="536" y="1178" class="body">实时限幅、温度监测与故障响应</text>
+    <text x="536" y="1202" class="small muted">学习生成动作，不等于驱动反馈与保护消失</text>
+  </g>
+  <g id="drive-feedback">
+    <rect x="1140" y="1078" width="376" height="132" rx="10" class="feedback-box"/>
+    <text x="1160" y="1111" class="feedback-heading">驱动反馈：输出与运行状态</text>
+    <text x="1160" y="1146" class="small">电流、转子位置、温度、故障等</text>
+    <text x="1160" y="1178" class="small muted">进入本地控制与保护</text>
+    <text x="1160" y="1202" class="small muted">并非必然由大模型承担</text>
+  </g>
+  <path d="M1140 1144 H1044" class="feedback"/>
+  <path d="M779 1210 V1272" class="command"/>
+  <text x="799" y="1246" class="small">电压 / PWM 等指令</text>
+
+  <!-- 执行器作用于本体与环境；传感器测量实际结果，而不是下一个软件阶段。 -->
+  <g id="actuator-module">
+    <rect x="514" y="1272" width="530" height="100" rx="10" class="hardware-box"/>
+    <text x="536" y="1305" class="heading">功率级与执行器</text>
+    <text x="536" y="1338" class="body">电源 → 功率级 → 电机与传动</text>
+    <text x="536" y="1362" class="small muted">受摩擦、饱和、温升与负载影响</text>
+  </g>
+  <path d="M779 1372 V1438" class="physical"/>
+  <text x="799" y="1410" class="small">力 / 力矩 → 运动与接触</text>
+  <g id="plant-module">
+    <rect x="514" y="1438" width="530" height="100" rx="10" class="hardware-box"/>
+    <text x="536" y="1471" class="heading">机器人本体与环境交互</text>
+    <text x="536" y="1504" class="body">实际运动、平衡、抓取与接触</text>
+    <text x="536" y="1528" class="small muted">实际结果受负载、扰动和地面条件影响</text>
+  </g>
+  <text x="66" y="1481" class="body muted">扰动 / 负载 / 接触</text>
+  <path d="M66 1504 H514" class="physical"/>
+  <g id="sensor-module">
+    <rect x="1140" y="1272" width="376" height="266" rx="10" class="hardware-box"/>
+    <text x="1160" y="1305" class="heading">传感器与采样</text>
+    <text x="1160" y="1343" class="body">驱动：电流、转子位置、温度</text>
+    <text x="1160" y="1379" class="body">自身：编码器、IMU、力等</text>
+    <text x="1160" y="1415" class="body">环境：相机、深度、激光等</text>
+    <path d="M1160 1436 H1496" class="rule"/>
+    <text x="1160" y="1470" class="small muted">输出：测量数据 → 多个反馈分支</text>
+    <text x="1160" y="1502" class="small muted">具体测量项依传感器配置而定</text>
+    <text x="1160" y="1526" class="small muted">采样不替代感知 / 状态估计算法</text>
+  </g>
+  <path d="M1044 1322 H1140" class="feedback"/>
+  <path d="M1044 1488 H1140" class="feedback"/>
+  <text x="1066" y="1308" class="small feedback-text">测量</text>
+  <text x="1066" y="1474" class="small feedback-text">测量</text>
+
+  <!-- 建图与定位产生地图和位姿，不是动作规划；已有地图时可只进行定位。 -->
+  <g id="mapping-localization-module">
+    <rect x="44" y="1218" width="420" height="204" rx="10" class="software-box"/>
+    <text x="66" y="1251" class="heading">环境建图与机器人定位</text>
+    <text x="66" y="1282" class="body">SLAM：同时定位与建图</text>
+    <text x="66" y="1312" class="small">输入：相机 / 激光、里程计等</text>
+    <text x="66" y="1343" class="small feedback-text">输出：环境地图 + 机器人位姿</text>
+    <text x="66" y="1375" class="small traditional">几何示例：扫描匹配、位姿图优化</text>
+    <text x="66" y="1403" class="small learning">也有学习式视觉 SLAM<tspan class="muted">；已有地图可只定位</tspan></text>
+  </g>
+  <!-- 原始观测先进入空间估计，估计结果再送导航；其他状态反馈仍按需独立处理。 -->
+  <path d="M1516 1512 H1552 V1572 H20 V1341 H44" class="feedback"/>
+  <text x="66" y="1549" class="small feedback-text">传感器观测 → 建图与定位</text>
+  <path d="M434 1218 V1152 H20 V463 H44" class="feedback"/>
+  <text x="66" y="1188" class="small feedback-text">地图 / 位姿 → ② 导航，不必经过 VLA</text>
+
+  <!-- 限制保留在图中，详细证据集中在配套笔记，不把图扩成算法清单。 -->
+  <path d="M44 1610 H1516" class="rule"/>
+  <text x="44" y="1646" class="heading">如何理解这套框架</text>
+  <text x="44" y="1683" class="body">• 导航与操作是两个问题；移动操作可协调或合并，固定机械臂不必先做导航。</text>
+  <text x="44" y="1717" class="body">• 反馈同时进入多个回路；根据新观测重算动作，不等于在线更新模型权重。</text>
+  <text x="44" y="1755" class="small muted">VLA：视觉语言动作模型；LLM / VLM：语言 / 视觉语言模型；RL：强化学习；FOC：磁场定向控制。</text>
+  <text x="44" y="1784" class="small muted">①–⑥ 按功能说明，并非每个产品的独立软件层；算法为示例，接口与实际部署必须单独核实。</text>
+  <a href="https://docs.nav2.org/jazzy/getting_started/navigation_concepts/navigation_servers/">
+    <text x="44" y="1817" class="source">Nav2 Jazzy（公开导航框架）</text>
+  </a>
+  <a href="https://www.figure.ai/news/helix-02">
+    <text x="370" y="1817" class="source">Helix 02（2026-01-27，公司披露）</text>
+  </a>
+  <a href="https://arxiv.org/html/2406.08858v1">
+    <text x="748" y="1817" class="source">OmniH2O（2024，实机研究）</text>
+  </a>
+  <a href="https://github.com/SteveMacenski/slam_toolbox">
+    <text x="1070" y="1817" class="source">SLAM Toolbox（ROS 2，开源）</text>
+  </a>
+  <text x="44" y="1846" class="small muted">核实与制图：2026-10-08。通用研究示意，不是 Optimus、Gemini Robotics 等产品的已确认架构；详细来源见配套笔记。</text>
+</svg>
