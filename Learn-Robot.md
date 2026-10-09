@@ -14,6 +14,9 @@
 - [github课程代码](https://github.com/NxRLab/ModernRobotics)
 - 
 
+## 研究笔记
+- [机械臂运动学基础：理解动作，定位失败](research/robotics-kinematics-foundations.md)：按《现代机器人学》组织必要理论，用于核对动作接口与排查实验失败。
+
 ## 博客
 - [机器人项目都涉及哪些技术，怎么组织起来](https://zhuanlan.zhihu.com/p/634848960)
 - [机器人研究热点](https://www.zhihu.com/question/328583927)
