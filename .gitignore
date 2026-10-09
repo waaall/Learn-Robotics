@@ -152,3 +152,7 @@ test-results/
 !.env.*.example
 !.env.*.sample
 !.env.*.template
+
+# ROS 2 workspace generated artifacts
+experiments/**/install/
+experiments/**/log/
