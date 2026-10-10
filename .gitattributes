@@ -1,0 +1,2 @@
+# WSL 中运行的 Bash 脚本必须使用 LF；覆盖 Windows 的 core.autocrlf 设置。
+experiments/**/*.sh text eol=lf

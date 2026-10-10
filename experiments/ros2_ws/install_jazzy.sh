@@ -6,6 +6,17 @@ if [[ "$ID" != ubuntu || "$VERSION_ID" != 24.04 ]]; then
   echo 'This script requires Ubuntu 24.04.' >&2
   exit 1
 fi
+install_profile=desktop
+case "${1:-}" in
+  ''|--desktop) ;;
+  --minimal) install_profile=minimal ;;
+  *) echo 'Usage: bash install_jazzy.sh [--minimal|--desktop]' >&2; exit 2 ;;
+esac
+if [[ $# -gt 1 ]]; then
+  echo 'Usage: bash install_jazzy.sh [--minimal|--desktop]' >&2
+  exit 2
+fi
+printf 'Install profile: %s\n' "$install_profile"
 export LANG=C.UTF-8
 sudo -v
 sudo apt-get -o APT::Update::Error-Mode=any update
@@ -24,7 +35,14 @@ curl --fail --show-error --location --connect-timeout 15 --max-time 120 \
   -o "$tmp_dir/ros2-apt-source.deb"
 sudo dpkg -i "$tmp_dir/ros2-apt-source.deb"
 sudo apt-get -o APT::Update::Error-Mode=any update
-sudo apt-get install -y ros-jazzy-desktop ros-dev-tools mesa-utils
+if [[ "$install_profile" == minimal ]]; then
+  sudo apt-get install -y --no-install-recommends \
+    ros-jazzy-ros-base ros-jazzy-rviz2 ros-jazzy-robot-state-publisher \
+    ros-jazzy-demo-nodes-cpp ros-jazzy-demo-nodes-py \
+    python3-colcon-common-extensions python3-rosdep mesa-utils
+else
+  sudo apt-get install -y ros-jazzy-desktop ros-dev-tools mesa-utils
+fi
 if [[ ! -f /etc/ros/rosdep/sources.list.d/20-default.list ]]; then
   sudo rosdep init
 fi
