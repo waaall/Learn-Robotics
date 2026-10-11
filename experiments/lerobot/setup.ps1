@@ -12,11 +12,22 @@ try {
     $ffmpegCache = Join-Path (Resolve-Path "../..") ".cache/ffmpeg"
     New-Item -ItemType Directory -Force $ffmpegCache | Out-Null
     $archive = Join-Path $ffmpegCache "ffmpeg.zip"
-    if (!(Test-Path $archive)) {
-        Invoke-WebRequest $manifest.url -OutFile $archive
-    }
-    if ((Get-FileHash $archive -Algorithm SHA256).Hash.ToLower() -ne $manifest.sha256) {
-        throw "FFmpeg archive checksum mismatch. Upstream latest may have changed; inspect before updating the manifest."
+    $archiveValid = (Test-Path -LiteralPath $archive -PathType Leaf) -and
+        ((Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant() -eq $manifest.sha256)
+    if (!$archiveValid) {
+        # A failed download must never become the reusable cache entry.
+        $partialArchive = Join-Path $ffmpegCache ("ffmpeg-" + [guid]::NewGuid().ToString("N") + ".partial")
+        try {
+            Invoke-WebRequest $manifest.url -OutFile $partialArchive -UseBasicParsing
+            if ((Get-FileHash -LiteralPath $partialArchive -Algorithm SHA256).Hash.ToLowerInvariant() -ne $manifest.sha256) {
+                throw "FFmpeg downloaded archive checksum mismatch. Verify the pinned source; the existing cache was not replaced."
+            }
+            Move-Item -LiteralPath $partialArchive -Destination $archive -Force
+        } finally {
+            if (Test-Path -LiteralPath $partialArchive -PathType Leaf) {
+                Remove-Item -LiteralPath $partialArchive -Force
+            }
+        }
     }
     $runtime = Join-Path $ffmpegCache "runtime"
     Expand-Archive -LiteralPath $archive -DestinationPath $runtime -Force
