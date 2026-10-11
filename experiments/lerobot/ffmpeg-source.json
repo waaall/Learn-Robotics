@@ -1,0 +1,6 @@
+{
+  "name": "ffmpeg-n8.1-latest-win64-gpl-shared-8.1.zip",
+  "url": "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-n8.1-latest-win64-gpl-shared-8.1.zip",
+  "sha256": "1e10bbe8604a3205a5f3e9313558625aac296c74eaf75953d724d59f9021803e",
+  "directory": "ffmpeg-n8.1-latest-win64-gpl-shared-8.1"
+}
