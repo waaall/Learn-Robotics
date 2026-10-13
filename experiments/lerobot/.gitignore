@@ -1,1 +1,4 @@
 outputs/
+
+# 服务器地址、账号和机器路径只在本地保存；模板仍可提交。
+/configs/remote.local.json

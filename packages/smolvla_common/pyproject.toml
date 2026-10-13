@@ -1,0 +1,14 @@
+# 训练与离线推理共享协议，重依赖由各宿主项目独立锁定。
+[project]
+name = "smolvla-common"
+version = "0.1.0"
+description = "Shared SmolVLA data, checkpoint and runtime contracts"
+requires-python = ">=3.12,<3.14"
+dependencies = ["numpy>=2.0.0,<2.3.0"]
+
+[build-system]
+requires = ["setuptools>=71.0.0,<82.0.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]

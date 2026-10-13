@@ -6,6 +6,10 @@
 
 控制链与源码分工见 [SO-ARM101 控制链与校准流程](control-chain.md)：按锁定版本说明 LeRobot、`scservo_sdk`、幻尔 SDK、USB 转接板及舵机固件的关系，包含校准、启动、每帧控制与开源电机控制参照。
 
+正式学习实验已独立为 [training](../training/README.md) 和 [inference](../inference/README.md)：前者负责公开数据微调／恢复，后者第一版只负责离线动作块评估。各有自己的依赖、锁文件和环境，不再给硬件项目附加 SmolVLA 安装开关；本目录保留原硬件流程与历史 ACT 小模型软件验收。完整分工见 [实验总览](../README.md)。
+
+服务器连接信息存放在 **Git 忽略的 `tools/remote/configs/*.local.json`**，通用代码只提交模板。配置校验、只读盘点及手动部署见 [远程工具](../../tools/remote/README.md)。它不会自动安装、同步、下载模型或启动训练。训练／推理尚未完成 4090 的真实模型验收。
+
 ## 版本与范围
 
 配置日期：2026-10-11。项目 Python 范围为 `>=3.12,<3.14`，即 3.12、3.13；本机使用已有 `C:\mysoftware\python312\python.exe`（3.12.6）。**允许解析 Python 3.13 不等于已在 3.13 上通过运行测试。**

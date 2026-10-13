@@ -1,0 +1,21 @@
+# 推理只消费冻结数据与完整模型产物；示例路径可调整，不要求训练项目安装或同机运行。
+[paths]
+base_dir = ".."
+prepared_manifest = "../training/outputs/smolvla/so100-pickplace/prepared.json"
+cache_dir = "../../.cache/smolvla"
+output_dir = "outputs/smolvla/so100-pickplace"
+
+[assets]
+# 留空使用准备记录中的资产路径；跨机器复制后填写本机的同版本资产目录。
+dataset_dir = ""
+base_model_dir = ""
+backbone_dir = ""
+
+[model]
+# 正式推理必须填写完整模型目录，或通过 --checkpoint 显式传入；不扫描训练目录。
+checkpoint = ""
+
+[inference]
+max_samples = 128
+warmup_runs = 3
+noise_seed = 123

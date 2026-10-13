@@ -1,0 +1,27 @@
+# 正式训练单独部署，不安装舵机、遥操作或可视化 extras。
+[project]
+name = "robot-policy-training"
+version = "0.1.0"
+description = "Windows SmolVLA public-data fine-tuning and checkpoint recovery"
+requires-python = ">=3.12,<3.14"
+dependencies = [
+    "lerobot[training,smolvla]==0.6.1",
+    "torch==2.10.0",
+    "torchvision==0.25.0",
+    "torchcodec==0.10.0",
+    "smolvla-common==0.1.0",
+]
+
+[tool.uv]
+package = false
+environments = ["sys_platform == 'win32' and platform_machine == 'AMD64'"]
+
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true
+
+[tool.uv.sources]
+torch = { index = "pytorch-cu128" }
+torchvision = { index = "pytorch-cu128" }
+smolvla-common = { path = "../../packages/smolvla_common", editable = true }

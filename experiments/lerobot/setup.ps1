@@ -1,8 +1,9 @@
+# 部署机械臂实验的既有 Windows 环境；正式训练与推理分别在独立项目部署。
 param([string]$Python = "python")
 $ErrorActionPreference = "Stop"
 Push-Location $PSScriptRoot
 try {
-    # Keep downloads in the repository cache, outside the tracked environment files.
+    # 下载缓存在仓库内，不改系统 Python，也不提交运行环境。
     $env:UV_CACHE_DIR = Join-Path (Resolve-Path "../..") ".cache/uv"
     uv sync --locked --python $Python
     if ($LASTEXITCODE -ne 0) { throw "Dependency installation failed" }
@@ -15,7 +16,7 @@ try {
     $archiveValid = (Test-Path -LiteralPath $archive -PathType Leaf) -and
         ((Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant() -eq $manifest.sha256)
     if (!$archiveValid) {
-        # A failed download must never become the reusable cache entry.
+        # 下载失败或哈希不符时，不能污染可复用的归档缓存。
         $partialArchive = Join-Path $ffmpegCache ("ffmpeg-" + [guid]::NewGuid().ToString("N") + ".partial")
         try {
             Invoke-WebRequest $manifest.url -OutFile $partialArchive -UseBasicParsing

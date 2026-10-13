@@ -1,0 +1,28 @@
+{
+  "schema_version": 2,
+  "ssh": {
+    "host": "CHANGE_ME",
+    "user": "CHANGE_ME",
+    "port": 22,
+    "identity_file": "",
+    "connect_timeout_seconds": 10,
+    "check_timeout_seconds": 60
+  },
+  "windows": {
+    "repo_dir": "D:\\CHANGE_ME\\Learn-Robotics",
+    "python_executable": "C:\\CHANGE_ME\\python.exe"
+  },
+  "project": {
+    "directory": "experiments/training",
+    "module": "smolvla_training",
+    "config": "configs/smolvla-so100.toml",
+    "required_files": [
+      "experiments/training/smolvla_training/__main__.py",
+      "packages/smolvla_common/src/smolvla_common/runtime.py",
+      "packages/smolvla_common/pyproject.toml",
+      "tools/windows_runtime/setup-environment.ps1",
+      "tools/windows_runtime/run-command.ps1",
+      "tools/windows_runtime/ffmpeg-source.json"
+    ]
+  }
+}
