@@ -171,6 +171,16 @@ PASS: calibration saved and motor registers match.
 
 后续原则：不因为“更保守”就加入任意限幅；先说明限制对象、单位与依据，检查它是否改变控制器出力或让目标停滞。需要平滑时限制目标轨迹变化率，并分别验证正常正反向与异常情形。开发约定已写入本目录的 [AGENTS.md](AGENTS.md)。
 
+## 启动与退出异常处理修复（2026-10-13）
+
+启动力矩前再次逐关节确认 `Torque_Enable=0`，然后使用有应答的单关节写入，将当前原始位置写入 `Goal_Position`，再逐关节精确回读。只有全部回读值与请求值相等，才调用从臂 `configure()` 使能力矩。写入失败、回读失败或不一致均中止启动；`metadata.json` 的 `startup_goal_verification` 保存请求值、力矩状态、已读到的目标值及验证结果。60 Hz 循环继续使用同步写入，启动确认不增加每帧的读写开销。
+
+退出时在每个关节的关力矩请求前清理串口接收缓冲并复位 SDK 的 `is_using` 忙标志，防止 Ctrl+C 中断读取后所有请求都因 `COMM_PORT_BUSY` 被拒绝。某个关节写入或缓冲清理失败仍继续尝试其余关节，保留失败日志和断开舵机电源的提示。这只能处理软件事务残留，不能保证串口断线等硬件故障时成功解除力矩。
+
+24 项离线检查通过，包括锁定版本 `feetech-servo-sdk==1.0.0` 的读取中断模拟、单关节通信失败后其余关节的关力矩数据包，以及启动目标不匹配时主程序不调用从臂配置。测试未打开真实串口；本次修复尚待实机复测。
+
+依据：[LeRobot 0.6.1 退出时的串口恢复及同步写入语义](https://github.com/huggingface/lerobot/blob/v0.6.1/src/lerobot/motors/motors_bus.py)、[从臂配置与力矩使能流程](https://github.com/huggingface/lerobot/blob/v0.6.1/src/lerobot/robots/so_follower/so_follower.py)。
+
 ## 实现依据
 
 - [0.6.1 主臂校准代码](https://github.com/huggingface/lerobot/blob/v0.6.1/src/lerobot/teleoperators/so_leader/so_leader.py)

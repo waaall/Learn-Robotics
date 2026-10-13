@@ -97,6 +97,51 @@ def preflight_faults(result):
     return faults
 
 
+def verify_startup_goals(bus, raw, verification):
+    """Replace stale goals while torque is off; require exact raw register readback."""
+    verification.update({'requested_raw': dict(raw), 'torque_before': {},
+                         'readback_raw': {}, 'verified': False})
+    try:
+        for joint in JOINTS:
+            torque = bus.read('Torque_Enable', joint, normalize=False, num_retry=2)
+            verification['torque_before'][joint] = torque
+            if torque != 0:
+                raise TrialStop(f'{joint}: torque enabled before startup goal verification; stop other controllers')
+        # Startup is not frequency-sensitive: use acknowledged writes, not sync_write.
+        for joint in JOINTS:
+            bus.write('Goal_Position', joint, raw[joint], normalize=False, num_retry=2)
+        for joint in JOINTS:
+            goal = bus.read('Goal_Position', joint, normalize=False, num_retry=2)
+            verification['readback_raw'][joint] = goal
+            if goal != raw[joint]:
+                raise TrialStop(f'{joint}: startup goal readback {goal} != requested {raw[joint]}; '
+                                'refusing to enable follower torque')
+    except TrialStop:
+        raise
+    except Exception as exc:
+        raise TrialStop(f'Startup goal verification failed; refusing to enable follower torque: {exc}') from exc
+    verification['verified'] = True
+
+
+def release_follower_torque(bus):
+    """Recover interrupted SDK transactions and attempt every joint even after a failure."""
+    failures = []
+    for joint in JOINTS:
+        # Like LeRobot disconnect(): an interrupted read may leave is_using set.
+        # Repeat recovery for each joint in case a failed write also leaves it set.
+        try:
+            bus.port_handler.clearPort()
+        except Exception as exc:
+            failures.append(f'{joint}: serial buffer cleanup failed: {exc}')
+        finally:
+            bus.port_handler.is_using = False
+        try:
+            bus.write('Torque_Enable', joint, 0, normalize=False, num_retry=2)
+        except Exception as exc:
+            failures.append(f'{joint}: {exc}')
+    return failures
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--seconds', type=float, default=60)
@@ -185,11 +230,12 @@ def main():
         targets(initial_requested, initial_f['position'], bounds, 0, speeds)
         metadata['initial'] = {'leader': initial_l, 'follower': initial_f}
         leader.configure()  # Keeps leader torque off, sets official communication settings.
-        # Replace any stale goal while torque is OFF, before official configuration enables torque.
+        # Verify every startup goal while torque is OFF, before configure() can enable it.
         current = position(follower)
         held_positions = current['position']
         targets(held_positions, held_positions, bounds, 0, speeds)
-        follower.bus.sync_write('Goal_Position', current['raw'], normalize=False)
+        metadata['startup_goal_verification'] = {}
+        verify_startup_goals(follower.bus, current['raw'], metadata['startup_goal_verification'])
         may_hold_torque = True  # Cleanup also covers partial failure inside configure().
         follower.configure()
         metadata['follower_configured_status'] = read_motor_status(follower.bus.port_handler, follower.bus.packet_handler)
@@ -279,12 +325,7 @@ def main():
     finally:
         try:
             if may_hold_torque:
-                failures = []
-                for joint in JOINTS:
-                    try:
-                        follower.bus.write('Torque_Enable', joint, 0, num_retry=2)
-                    except Exception as exc:
-                        failures.append(f'{joint}: {exc}')
+                failures = release_follower_torque(follower.bus)
                 if failures:
                     metadata['torque_release_errors'] = failures
                     print('TORQUE RELEASE FAILED: support the arm and disconnect motor power.', failures)

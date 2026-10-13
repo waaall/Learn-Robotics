@@ -1,9 +1,21 @@
-"""Offline regression checks for observation tolerance and command trajectory limits."""
+"""Offline checks for command limits, startup verification and interrupted SDK cleanup."""
+from dataclasses import dataclass
+import json
+from pathlib import Path
+import sys
+import tempfile
 from types import SimpleNamespace
 import unittest
+from unittest.mock import Mock, patch
+
+from scservo_sdk import COMM_SUCCESS, PacketHandler
 
 from hardware import JOINTS, read_motor_status
-from teleop_test import PositionReadError, TrialStop, preflight_faults, requested_positions, targets, validate_position
+import teleop_test
+from teleop_test import (
+    PositionReadError, TrialStop, preflight_faults, release_follower_torque,
+    requested_positions, targets, validate_position, verify_startup_goals,
+)
 
 
 class TeleopBoundaryTests(unittest.TestCase):
@@ -128,6 +140,170 @@ class TeleopBoundaryTests(unittest.TestCase):
                   'torque_enabled': 0}], 'status': {'gripper': {'comm': 0, 'packet_error': 0,
                   'torque_enabled': 0}}}
         self.assertEqual(preflight_faults(result), [])
+
+
+class StartupGoalTests(unittest.TestCase):
+    def setUp(self):
+        self.raw = dict.fromkeys(JOINTS, 2000)
+        self.verification = {}
+        self.goals = dict.fromkeys(JOINTS, 1024)
+        self.bus = Mock()
+        self.bus.read.side_effect = lambda name, joint, **kw: (
+            self.goals[joint] if name == 'Goal_Position' else 0)
+        self.bus.write.side_effect = lambda name, joint, value, **kw: self.goals.update({joint: value})
+
+    def test_all_startup_goals_are_acknowledged_and_verified(self):
+        verify_startup_goals(self.bus, self.raw, self.verification)
+        self.assertTrue(self.verification['verified'])
+        self.assertEqual(self.verification['readback_raw'], self.raw)
+        self.bus.sync_write.assert_not_called()
+        for joint in JOINTS:
+            self.bus.write.assert_any_call('Goal_Position', joint, 2000, normalize=False, num_retry=2)
+
+    def test_existing_torque_blocks_all_startup_writes(self):
+        self.bus.read.side_effect = lambda name, joint, **kw: int(joint == 'elbow_flex')
+        with self.assertRaisesRegex(TrialStop, 'torque enabled'):
+            verify_startup_goals(self.bus, self.raw, self.verification)
+        self.bus.write.assert_not_called()
+        self.assertFalse(self.verification['verified'])
+
+    def test_goal_write_failure_cannot_mark_startup_verified(self):
+        self.bus.write.side_effect = OSError('write failed')
+        with self.assertRaisesRegex(TrialStop, 'write failed'):
+            verify_startup_goals(self.bus, self.raw, self.verification)
+        self.assertFalse(self.verification['verified'])
+        self.assertEqual(self.verification['readback_raw'], {})
+
+    def test_failed_read_preserves_partial_verification(self):
+        def read(name, joint, **kw):
+            if name == 'Torque_Enable':
+                return 0
+            if joint == 'elbow_flex':
+                raise OSError('timeout')
+            return self.goals[joint]
+        self.bus.read.side_effect = read
+        with self.assertRaisesRegex(TrialStop, 'timeout'):
+            verify_startup_goals(self.bus, self.raw, self.verification)
+        self.assertFalse(self.verification['verified'])
+        self.assertEqual(self.verification['readback_raw'], {'shoulder_pan': 2000, 'shoulder_lift': 2000})
+
+    def test_mismatched_goal_exits_main_without_enabling_torque(self):
+        @dataclass
+        class Calibration:
+            range_min: int = 860
+            range_max: int = 3197
+
+        leader, follower = Mock(), Mock()
+        for device in (leader, follower):
+            device.config = SimpleNamespace(port='offline')
+            device.calibration_fpath = 'offline.json'
+            device.calibration = {j: Calibration() for j in JOINTS}
+            device.bus.is_calibrated = True
+            device.bus.port_handler.is_open = True
+            # A write appears successful, but the readback retains a stale goal.
+            device.bus.read.side_effect = lambda name, joint, **kw: 1024 if name == 'Goal_Position' else 0
+        modules = {
+            'lerobot.teleoperators.so_leader': SimpleNamespace(
+                SO101Leader=Mock(return_value=leader), SO101LeaderConfig=SimpleNamespace),
+            'lerobot.robots.so_follower': SimpleNamespace(
+                SO101Follower=Mock(return_value=follower), SO101FollowerConfig=SimpleNamespace),
+        }
+        snapshot = {'raw': self.raw, 'position': dict.fromkeys(JOINTS, 0), 'calibration_excursions': {}}
+        with (
+            tempfile.TemporaryDirectory() as folder,
+            patch.dict(sys.modules, modules),
+            patch.object(teleop_test, '__file__', str(Path(folder) / 'teleop_test.py')),
+            patch.object(teleop_test.importlib.metadata, 'version', return_value='0.6.1'),
+            patch.object(teleop_test, 'resolve_port', return_value='offline'),
+            patch.object(teleop_test, 'probe', side_effect=lambda role, **kw: {'arm': role, 'motors': [], 'status': {}}),
+            patch.object(teleop_test, 'position', return_value=snapshot),
+            patch.object(teleop_test, 'normalize', side_effect=lambda device, raw: {j: (v - 2000) / 10 for j, v in raw.items()}),
+            patch.object(sys, 'argv', ['teleop_test.py']),
+            patch('builtins.input', return_value=''),
+            patch('builtins.print'),
+        ):
+            teleop_test.main()
+            metadata_path = next((Path(folder) / 'outputs/teleop-tests').glob('*/metadata.json'))
+            metadata = json.loads(metadata_path.read_text(encoding='utf-8'))
+        follower.configure.assert_not_called()
+        self.assertEqual(metadata['result'], 'diagnostic_stop')
+        self.assertFalse(metadata['startup_goal_verification']['verified'])
+        self.assertEqual(metadata['startup_goal_verification']['readback_raw']['shoulder_pan'], 1024)
+        self.assertTrue(all(call.args[0] == 'Goal_Position' for call in follower.bus.write.call_args_list))
+
+
+class OfflinePort:
+    """In-memory port for the real SDK; never opens a serial device."""
+    def __init__(self, failed_motor=None):
+        self.is_using = False
+        self.interrupt_read = False
+        self.failed_motor = failed_motor
+        self.torque_writes = []
+
+    def clearPort(self):
+        pass
+
+    def writePort(self, data):
+        self.motor = data[2]
+        if data[4] == 3 and data[5] == 40:  # WRITE Torque_Enable
+            if self.motor == self.failed_motor:
+                raise OSError('simulated disconnected motor')
+            self.torque_writes.append((self.motor, data[6]))
+        return len(data)
+
+    def setPacketTimeout(self, length):
+        pass
+
+    def readPort(self, length):
+        if self.interrupt_read:
+            raise KeyboardInterrupt
+        return [255, 255, self.motor, 2, 0, (~(self.motor + 2)) & 255]
+
+
+class OfflineSDKBus:
+    def __init__(self, port):
+        self.port_handler = port
+        self.packet_handler = PacketHandler(0)
+
+    def write(self, name, joint, value, *, normalize, num_retry):
+        if name != 'Torque_Enable' or normalize:
+            raise AssertionError('Only raw torque writes expected')
+        for _ in range(num_retry + 1):
+            comm, error = self.packet_handler.write1ByteTxRx(
+                self.port_handler, JOINTS.index(joint) + 1, 40, value)
+            if comm == COMM_SUCCESS and error == 0:
+                return
+        raise RuntimeError(f'comm={comm}, error={error}')
+
+
+class TorqueReleaseTests(unittest.TestCase):
+    def test_real_sdk_interrupted_read_can_release_every_joint(self):
+        port = OfflinePort()
+        bus = OfflineSDKBus(port)
+        port.interrupt_read = True
+        with self.assertRaises(KeyboardInterrupt):
+            bus.packet_handler.read1ByteTxRx(port, 1, 40)
+        self.assertTrue(port.is_using)  # The original failure, reproduced in the actual SDK.
+        port.interrupt_read = False
+        self.assertEqual(release_follower_torque(bus), [])
+        self.assertEqual(port.torque_writes, [(motor, 0) for motor in range(1, 7)])
+
+    def test_failed_write_does_not_keep_other_joints_busy(self):
+        port = OfflinePort(failed_motor=2)
+        failures = release_follower_torque(OfflineSDKBus(port))
+        self.assertEqual(len(failures), 1)
+        self.assertIn('shoulder_lift', failures[0])
+        self.assertEqual(port.torque_writes, [(motor, 0) for motor in (1, 3, 4, 5, 6)])
+
+    def test_failed_buffer_clear_does_not_abort_remaining_joints(self):
+        port = Mock(is_using=True)
+        port.clearPort.side_effect = [OSError('buffer error'), None, None, None, None, None]
+        bus = Mock(port_handler=port)
+        failures = release_follower_torque(bus)
+        self.assertEqual(len(failures), 1)
+        self.assertIn('buffer error', failures[0])
+        self.assertFalse(port.is_using)
+        self.assertEqual(bus.write.call_count, len(JOINTS))
 
 
 if __name__ == '__main__':
