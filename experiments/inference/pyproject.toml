@@ -12,6 +12,10 @@ dependencies = [
     "smolvla-common==0.1.0",
 ]
 
+# 实时入口只读取从臂，不需要训练项目或硬件项目的 Python 环境。
+[project.optional-dependencies]
+live = ["lerobot[feetech]==0.6.1"]
+
 [tool.uv]
 package = false
 environments = ["sys_platform == 'win32' and platform_machine == 'AMD64'"]

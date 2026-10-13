@@ -42,6 +42,18 @@
 
 ## 无硬件验收
 
+### 夹爪相机实时预览
+
+在仓库根目录运行下面的命令，可打开相机画面窗口，查看实测取帧 FPS，按 `S` 保存当前画面，按 `Esc` 或关闭窗口退出：
+
+```powershell
+& .\experiments\lerobot\.venv\Scripts\python.exe .\experiments\lerobot\camera_preview.py --index 0
+```
+
+脚本只访问相机，不导入机器人驱动或打开串口。使用 OpenCV 的 DirectShow 后端采集，并通过 Tkinter/Pillow 显示，兼容当前的 `opencv-python-headless` 环境；需要 Python 包含 Tkinter。默认请求 `640×480 / YUY2 / 30 FPS`，窗口中的实测 FPS 可能低于请求值。相机编号可能随 USB 插拔变化；当前实测编号为 `0`。截图和运行状态保存到本目录的 `outputs/camera-preview`。
+
+### 环境检查
+
 `check_environment.py` 不打开串口、不连接机器人、不打开摄像头、不上传数据：
 
 1. 验证 CUDA 可用，并记录实际 GPU、Python 和依赖版本。

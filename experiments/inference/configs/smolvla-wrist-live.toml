@@ -1,0 +1,24 @@
+# 实时诊断：只生成动作文件；没有执行动作的选项。
+[paths]
+cache_dir = "../../../.cache/smolvla-live"
+output_dir = "../outputs/wrist-live"
+calibration = "../../lerobot/outputs/calibration/follower/hiwonder_follower.json"
+
+[model]
+repo_id = "lerobot/smolvla_base"
+revision = "5e8d12a6e2975b0e5e5fce7c8caf47c371d257b6"
+
+[hardware]
+follower_serial = "5C82109737"
+camera_index = 0
+width = 640
+height = 480
+fps = 30
+
+[inference]
+# 仅用于打通输入／输出的示例指令，可通过 --task 替换。
+task = "Pick up the object and place it in the container."
+samples = 10
+warmup_runs = 2
+noise_seed = 42
+use_amp = false

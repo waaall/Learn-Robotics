@@ -4,7 +4,7 @@
 | --- | --- | --- |
 | [lerobot](lerobot/README.md) | SO-101 初始化、通信、校准、遥操作、采集 | 保留已验证的硬件流程 |
 | [training](training/README.md) | 公开数据准备、SmolVLA 微调、验证 loss、完整状态恢复 | 不连接机械臂，不提供推理命令 |
-| [inference](inference/README.md) | 基线／训练模型的离线动作块预测、指标、延迟、比较 | 不更新参数，不执行真机动作 |
+| [inference](inference/README.md) | 离线预测比较、单夹爪视角实时输入诊断 | 不更新参数，不执行真机动作 |
 
 它们是**同一 Git 仓库中的独立部署项目**，不是三个新仓库。每个项目各有 `pyproject.toml`、`uv.lock`、`.venv`、`setup.ps1`、`run.ps1`、环境预检和 README；安装其中一个不会同步另外两个的环境。第一版锁文件针对 Windows x64、Python 3.12/3.13、CUDA 12.8 PyTorch wheel；其他平台不能据此宣称已支持。
 
@@ -17,7 +17,7 @@
 
 不要建 uv workspace 或共享 `.venv`。uv workspace 共享锁文件；需要不同环境时官方建议使用独立项目与 path dependencies。这是本仓库的部署选择，不是 LeRobot 强制的目录结构。[uv 官方说明](https://docs.astral.sh/uv/concepts/projects/workspaces/#when-not-to-use-workspaces)
 
-上游 LeRobot 0.6.1 把 `training`、`dataset`、`smolvla` 与硬件 extras 分开。本仓库 training 声明 `training,smolvla`，inference 声明 `dataset,smolvla`，后者不安装 W&B 或舵机 SDK。LeRobot 本体仍包含训练模块，不能把“不启用训练入口”表述成“框架绝无训练代码”。硬件项目原有 ACT 小模型软件验收及历史依赖暂保留，不属于新增的正式训练项目。[上游依赖定义](https://github.com/huggingface/lerobot/blob/v0.6.1/pyproject.toml)
+上游 LeRobot 0.6.1 把 `training`、`dataset`、`smolvla` 与硬件 extras 分开。本仓库 training 声明 `training,smolvla`，inference 默认声明 `dataset,smolvla`，不安装 W&B 或舵机 SDK；仅显式选择 `--extra live` 时增加 Feetech SDK 与串口依赖，用于读取从臂。LeRobot 本体仍包含训练模块，不能把“不启用训练入口”表述成“框架绝无训练代码”。硬件项目原有 ACT 小模型软件验收及历史依赖暂保留，不属于新增的正式训练项目。[上游依赖定义](https://github.com/huggingface/lerobot/blob/v0.6.1/pyproject.toml)
 
 ## 流程和文件交接
 
@@ -44,4 +44,4 @@ python tools/test_offline.py
 
 2026-10-13 本机验证：80 项无网络／无硬件测试通过；三份 uv 锁文件分别通过离线一致性检查；源码编译与空白检查通过；共享包在临时隔离环境中 editable 安装成功，两个项目的 plan 无需 PYTHONPATH 可运行。硬件锁文件、依赖和执行代码保持原状（setup 仅更新说明注释）。
 
-本次迁移的真实验证范围见各项目 README。**尚未执行 Windows 安装、4090 上的真实 SmolVLA 训练／推理、恢复或真机测试；未再次连接服务器。**
+本次迁移时的验证范围见各项目 README；4090 上的训练／恢复与闭环控制尚未验收，未再次连接服务器。2026-10-13 后续在本机 RTX 3060 Ti 完成独立推理环境安装，以及单夹爪相机＋真实从臂状态的 10 次 SmolVLA 推理，动作仅落盘；新增适配后 90 项无硬件测试通过，具体延迟与限制见 inference README。

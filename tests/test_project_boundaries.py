@@ -28,9 +28,17 @@ class ProjectBoundaryTests(unittest.TestCase):
                 lock = tomllib.loads((folder / "uv.lock").read_text())
                 packages = {package["name"] for package in lock["package"]}
                 self.assertTrue({"smolvla-common", "lerobot", "torch", "transformers"} <= packages)
-                self.assertFalse({"feetech-servo-sdk", "scservo-sdk", "rerun-sdk", "dynamixel-sdk"} & packages)
+                self.assertFalse({"scservo-sdk", "rerun-sdk", "dynamixel-sdk"} & packages)
+                if name == "training":
+                    self.assertNotIn("feetech-servo-sdk", packages)
                 if name == "inference":
                     self.assertNotIn("wandb", packages)
+                    # 默认离线环境无舵机依赖；显式 live extra 才安装只读适配所需 SDK。
+                    self.assertEqual(pyproject["project"]["optional-dependencies"]["live"],
+                                     ["lerobot[feetech]==0.6.1"])
+                    project_package = next(p for p in lock["package"] if p["name"] == "robot-policy-inference")
+                    defaults = {p["name"] for p in project_package["dependencies"]}
+                    self.assertFalse({"feetech-servo-sdk", "pyserial"} & defaults)
 
     def test_production_code_does_not_import_peer_projects_or_hardware(self):
         targets = [(REPO / "experiments/training/smolvla_training", {"smolvla_inference", "remote_lab"}),
