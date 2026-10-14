@@ -78,6 +78,8 @@ $TrainedReport = Join-Path $Plan.output_dir "checkpoint/report.json"
 
 ## 推理方式和指标解释
 
+SmolVLA 采用从噪声生成动作的 Flow Matching 策略。噪声提供生成起点，图像、状态与任务文本提供条件，训练后的参数提供动作生成规则。`chunk_size=50` 是动作块长度，`num_steps=10` 是生成该块的积分次数；噪声的作用及其与直接预测、ACT、Diffusion Policy 的区别见[模型原理第 7 节](../../research/smolvla-architecture.md#7-flow-matching-训练与推理)。
+
 - 条件仅为当前 `observation.*` 与 `task`；示范 action、padding 和未来状态不输入模型。
 - 固定种子加全局帧号产生**动作块形状**的噪声；它不是实测关节状态。SmolVLA 根据条件迭代生成动作块。
 - 基线使用训练侧 stats；训练模型回读保存的预／后处理器和归一化状态，不用验证统计覆盖。
