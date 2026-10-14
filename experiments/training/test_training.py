@@ -1,6 +1,7 @@
 """独立训练测试：配置、官方循环适配和状态恢复，不加载推理项目。"""
 
 from contextlib import redirect_stdout
+from collections import Counter
 from dataclasses import replace
 import io
 import json
@@ -15,7 +16,7 @@ from unittest.mock import patch
 from smolvla_common.config import load_config, validate_config
 from smolvla_common.protocol import read_json, validate_checkpoint_protocol, write_json
 from smolvla_training.__main__ import main
-from smolvla_training.training import trainer_arguments
+from smolvla_training.training import make_validation_dataset, trainer_arguments
 CONFIG = Path(__file__).parent / "configs/smolvla-so100.toml"
 
 
@@ -47,6 +48,7 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(self.cfg.training.batch_size, 8)
         self.assertTrue(self.cfg.policy.train_expert_only)
         self.assertFalse(self.cfg.policy.use_amp)
+        self.assertEqual(self.cfg.training.max_eval_samples, 0)
 
     def test_paths_resolve_from_config_not_working_directory(self):
         self.assertEqual(self.cfg.run_dir, CONFIG.parent.parent / "outputs" / "smolvla" / "so100-pickplace")
@@ -60,6 +62,12 @@ class ConfigTests(unittest.TestCase):
     def test_warmup_must_be_shorter_than_training(self):
         with self.assertRaises(ValueError):
             validate_config(replace(self.cfg, training=replace(self.cfg.training, steps=100)))
+
+    def test_validation_limit_allows_zero_and_rejects_invalid_values(self):
+        validate_config(replace(self.cfg, training=replace(self.cfg.training, max_eval_samples=0)))
+        for value in (-1, True, 2.5):
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                validate_config(replace(self.cfg, training=replace(self.cfg.training, max_eval_samples=value)))
 
     def test_invalid_policy(self):
         for key, value in (("chunk_size", 0), ("num_steps", -1), ("train_expert_only", "true")):
@@ -90,6 +98,47 @@ class ConfigTests(unittest.TestCase):
             main(["--config", str(CONFIG), "plan"])
         self.assertEqual(json.loads(output.getvalue())["dataset"]["repo_id"], self.cfg.dataset.repo_id)
 
+class ValidationSamplingTests(unittest.TestCase):
+    class Dataset:
+        def __init__(self, lengths):
+            self.hf_dataset = {"episode_index": [episode for episode, count in lengths.items() for _ in range(count)]}
+
+        def __len__(self):
+            return len(self.hf_dataset["episode_index"])
+
+        def __getitem__(self, index):
+            return {"episode_index": self.hf_dataset["episode_index"][index], "index": index}
+
+    def setUp(self):
+        self.lengths = {4: 401, 9: 388, 11: 377, 16: 365, 19: 367, 23: 375, 25: 408, 26: 353, 29: 374, 45: 351}
+        self.dataset = self.Dataset(self.lengths)
+
+    def test_full_validation_covers_all_frames_and_episodes(self):
+        evaluation, report = make_validation_dataset(self.dataset, 0)
+        self.assertEqual(len(evaluation), 3759)
+        self.assertEqual(report["evaluated_frames"], 3759)
+        self.assertEqual(report["episode_frame_counts"], {str(key): value for key, value in self.lengths.items()})
+
+    def test_capped_validation_spreads_256_frames_over_all_ten_episodes(self):
+        evaluation, report = make_validation_dataset(self.dataset, 256)
+        counts = Counter(evaluation[index]["episode_index"] for index in range(len(evaluation)))
+        self.assertEqual(len(evaluation), 256)
+        self.assertEqual(set(counts), set(self.lengths))
+        self.assertEqual(set(counts.values()), {25, 26})
+        self.assertFalse(hasattr(evaluation, "hf_dataset"), "上游不能再次把均衡取样截成单一轨迹的前缀")
+        offset = 0
+        for episode, length in self.lengths.items():
+            selected = [evaluation[index]["index"] for index in range(len(evaluation))
+                        if evaluation[index]["episode_index"] == episode]
+            self.assertEqual((min(selected), max(selected)), (offset, offset + length - 1))
+            offset += length
+        self.assertEqual(sum(report["episode_frame_counts"].values()), 256)
+
+    def test_limit_smaller_than_episode_count_is_rejected(self):
+        with self.assertRaisesRegex(ValueError, "覆盖所有轨迹"):
+            make_validation_dataset(self.dataset, 9)
+
+
 class TrainingAdapterTests(unittest.TestCase):
     def exercise(self, *, fail=False):
         import smolvla_training.training as training
@@ -118,6 +167,7 @@ class TrainingAdapterTests(unittest.TestCase):
             def loop(active):
                 self.assertEqual(active.steps, 20000)
                 self.assertEqual(active.env_eval_freq, 0)
+                self.assertEqual(active.max_eval_samples, 0)
                 self.assertEqual(trainer.make_train_eval_datasets(active), ("train-data", "validation-data"))
                 self.assertEqual(trainer.make_policy(cfg=active.policy, ds_meta=None, rename_map={}), "strict-policy")
                 trainer.make_pre_post_processors(preprocessor_overrides={"normalizer_processor": {"stats": "train-only"}})
@@ -140,6 +190,7 @@ class TrainingAdapterTests(unittest.TestCase):
                     patch.object(training, "load_manifest", return_value=manifest), \
                     patch.object(training, "make_policy_config", return_value=policy_cfg), \
                     patch.object(training, "load_policy", return_value="strict-policy"), \
+                    patch.object(training, "make_validation_dataset", return_value=("validation-data", {"mode": "full"})), \
                     patch.object(training, "open_dataset", side_effect=dataset_opener):
                 if fail:
                     with self.assertRaises(RuntimeError):
@@ -148,6 +199,7 @@ class TrainingAdapterTests(unittest.TestCase):
                     model = training.train(cfg)
                     validate_checkpoint_protocol(model, cfg.fingerprint, manifest["revisions"])
             self.assertEqual(calls, [[0], [1]])
+            self.assertEqual(read_json(cfg.run_dir / "validation-sampling.json"), {"mode": "full"})
             self.assertIs(trainer.make_pre_post_processors, original_processors)
             self.assertIs(trainer.make_policy, original_policy)
             self.assertIs(trainer.make_train_eval_datasets, original_datasets)

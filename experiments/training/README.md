@@ -74,6 +74,10 @@ $ModelDir = $Result.checkpoint
 
 官方 `lerobot_train.train` 管理梯度更新、优化器、LR 调度、评估和完整训练状态。本项目仅在当前进程／调用期间替换数据工厂、严格权重加载、固定 tokenizer 和 Windows `latest.json` 索引，不修改 site-packages。
 
+默认 `max_eval_samples = 0`，每次验证遍历全部留出帧。本次冻结的公开数据有 10 条验证轨迹、3,759 帧。设置正数上限时，按轨迹均衡分配样本，并在每条轨迹内分散选取前、中、后帧；上限小于验证轨迹数会报错。`validation-sampling.json` 记录实际参与验证的帧数和每条轨迹的计数。限量验证包装为 `Subset`，避免上游按任务再次截取最前面的帧。
+
+验证上限也是冻结配置的一部分；旧 `prepared.json` 或 checkpoint 不能与改变后的配置混用。修改后须在新 run_dir 重新 prepare，并保留旧运行的产物。
+
 中断恢复须明确选择**同一运行**的完整 checkpoint，可传 checkpoint 步数目录或其中的 `pretrained_model`：
 
 ```powershell

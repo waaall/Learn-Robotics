@@ -31,6 +31,7 @@ warmup_steps = 1000
 save_freq = 2000
 log_freq = 100
 eval_freq = 2000
-max_eval_samples = 256
+# 0 评估全部验证帧；正数按完整验证轨迹均衡选帧，且须覆盖每条轨迹。
+max_eval_samples = 0
 seed = 42
 

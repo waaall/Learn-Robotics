@@ -1,12 +1,13 @@
 """复用 LeRobot 官方训练循环、优化器和 checkpoint；只适配数据划分与严格模型加载。"""
 
+from collections import Counter
 from contextlib import contextmanager
 import sys
 import time
 from pathlib import Path
 from unittest.mock import patch
 
-from smolvla_common.protocol import latest_checkpoint, read_json, update_checkpoint_pointer, validate_checkpoint, validate_checkpoint_protocol, write_json
+from smolvla_common.protocol import latest_checkpoint, read_json, select_frame_indices, update_checkpoint_pointer, validate_checkpoint, validate_checkpoint_protocol, write_json
 from smolvla_common.runtime import configure_cache, load_manifest, load_policy, make_policy_config, open_dataset, require_runtime
 
 
@@ -19,6 +20,31 @@ def trainer_arguments(arguments):
         yield
     finally:
         sys.argv = previous
+
+
+def make_validation_dataset(dataset, max_samples):
+    """默认评估全部留出帧；限量时覆盖每条轨迹并在轨迹内分散取帧。"""
+    if type(max_samples) is not int or max_samples < 0:
+        raise ValueError("max_eval_samples 必须是非负整数；0 表示全量验证")
+    episodes = [int(value) for value in dataset.hf_dataset["episode_index"]]
+    if not episodes or len(episodes) != len(dataset):
+        raise ValueError("验证轨迹索引与实际帧数不一致或验证集为空")
+    if max_samples == 0:
+        selected = range(len(episodes))
+        evaluation = dataset
+    else:
+        from torch.utils.data import Subset
+        selected = select_frame_indices(episodes, max_samples)
+        # Subset 不暴露 hf_dataset，上游不会再次按 task 截取最前面的帧。
+        evaluation = Subset(dataset, selected)
+    counts = Counter(episodes[index] for index in selected)
+    report = {
+        "mode": "full" if max_samples == 0 else "episode-balanced",
+        "max_samples": max_samples, "total_frames": len(episodes), "evaluated_frames": len(selected),
+        "total_episodes": len(set(episodes)),
+        "episode_frame_counts": {str(episode): counts[episode] for episode in sorted(counts)},
+    }
+    return evaluation, report
 
 
 def train(cfg, resume_from=None):
@@ -63,8 +89,11 @@ def train(cfg, resume_from=None):
     def datasets_adapter(active_cfg):
         if active_cfg.dataset.root != manifest["dataset_path"] or active_cfg.dataset.revision != manifest["revisions"]["dataset"]:
             raise ValueError("训练配置的数据路径／版本与准备记录不符")
-        return tuple(open_dataset(cfg, manifest, manifest["split"][side], active_cfg.policy)
-                     for side in ("train", "validation"))
+        training = open_dataset(cfg, manifest, manifest["split"]["train"], active_cfg.policy)
+        validation = open_dataset(cfg, manifest, manifest["split"]["validation"], active_cfg.policy)
+        validation, sampling = make_validation_dataset(validation, active_cfg.max_eval_samples)
+        write_json(cfg.run_dir / "validation-sampling.json", sampling)
+        return training, validation
 
     def policy_adapter(*, cfg, ds_meta, rename_map):
         # 模型权重必须严格匹配，不能让缺失参数静默保持随机初始化。

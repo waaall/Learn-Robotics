@@ -40,7 +40,7 @@ class TrainingConfig:
     save_freq: int = 2000
     log_freq: int = 100
     eval_freq: int = 2000
-    max_eval_samples: int = 256
+    max_eval_samples: int = 0
     seed: int = 42
 
 
@@ -123,12 +123,13 @@ def validate_config(cfg: ExperimentConfig):
         "steps": cfg.training.steps, "batch_size": cfg.training.batch_size,
         "chunk_size": cfg.policy.chunk_size, "num_steps": cfg.policy.num_steps,
         "save_freq": cfg.training.save_freq, "log_freq": cfg.training.log_freq,
-        "eval_freq": cfg.training.eval_freq, "max_eval_samples": cfg.training.max_eval_samples,
+        "eval_freq": cfg.training.eval_freq,
     }
     for name, value in positive.items():
         if type(value) is not int or value <= 0:
             raise ValueError(f"{name} 必须是正整数")
     for name, value in (("num_workers", cfg.training.num_workers),
+                        ("max_eval_samples", cfg.training.max_eval_samples),
                         ("warmup_steps", cfg.training.warmup_steps), ("seed", cfg.training.seed),
                         ("split_seed", cfg.dataset.split_seed)):
         if type(value) is not int or value < 0:
