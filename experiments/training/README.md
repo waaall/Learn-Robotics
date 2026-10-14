@@ -1,5 +1,7 @@
 # Training：SmolVLA 公开数据正式微调
 
+模型原理见[SmolVLA：模型架构、训练与推理](../../research/smolvla-architecture.md)，包括 VLM、动作专家、状态投影、Flow Matching 和梯度计算。本文说明部署、训练与验收流程。
+
 ## 范围
 
 Windows 原生单卡训练项目，入口只有 `plan / prepare / train`。负责下载并冻结资产、完整轨迹划分、训练侧统计量、官方训练循环、验证 loss 与 checkpoint 保存／恢复；**不连接机械臂、不打开实时摄像头、不提供离线／真机推理命令、不自动上传模型**。离线推理由 [inference 项目](../inference/README.md)负责。

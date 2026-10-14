@@ -1,5 +1,7 @@
 # Inference：SmolVLA 离线比较与实时输入诊断
 
+模型原理见[SmolVLA：模型架构、训练与推理](../../research/smolvla-architecture.md)，包括上下文编码、动作块生成、K/V 缓存与数值积分。本文说明推理部署、诊断和指标计算。
+
 ## 范围与独立性
 
 离线入口 `python -m smolvla_inference` 保留 `plan / infer / compare`：从留出轨迹生成动作块，保存预测、误差与延迟，不连接硬件。新增独立入口 `python -m smolvla_inference.live`，读取 SO-101 从臂与夹爪相机，使用基础模型生成动作文件。两种入口都不更新权重、不执行机器人动作。

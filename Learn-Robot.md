@@ -39,6 +39,8 @@
 
 ## 学习策略与 VLA
 
+- 研究笔记：[SmolVLA：模型架构、训练与推理](research/smolvla-architecture.md)：记录 VLM、动作专家、状态投影、Flow Matching 及梯度计算，对照 LeRobot 0.6.1 实现与本项目配置。
+
 视觉语言动作模型（Vision-Language-Action，VLA）不只是输出文字建议。以下系统已经由模型直接生成操作动作或关节运动目标，不应把这些公开事实写成“将来可能替代”：
 
 - **公开披露 — DeepMind RT-2（CoRL 2023）：** 相机图像与任务指令直接映射到末端位置/旋转增量、夹爪指令和任务终止标志。对象选择与逐步末端动作生成由同一个 VLA 承担，而不只是让语言模型挑选技能名称、再交给另一个动作策略生成末端动作。[论文发表记录](https://proceedings.mlr.press/v229/zitkovich23a.html)；[论文正文 §1、§3.2，arXiv v1](https://arxiv.org/html/2307.15818v1)。
