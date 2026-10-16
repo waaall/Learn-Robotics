@@ -31,7 +31,35 @@ uv run --locked python -m unittest discover -s tests -v
 
 完成首次安装后，可给 `uv run` 增加 `--offline` 禁止联网。未提供 `--output` 时，入口只向标准输出打印 JSON。任一物理验收项不通过时返回退出码 `1`；配置错误会抛出异常并返回非零状态。
 
-不需要显卡、显示窗口或 OpenGL 上下文即可执行这里的计算。MuJoCo wheel 自带的 GUI 依赖仍会安装，但本实验不打开查看器。**已验证环境仅为 macOS arm64、Python 3.12.11；Windows/Linux 和其他 Python 版本尚未实测。**
+不需要显卡、显示窗口或 OpenGL 上下文即可执行这里的计算。MuJoCo wheel 自带的 GUI 依赖仍会安装，但上述数值验收命令不打开查看器。**已验证环境仅为 macOS arm64、Python 3.12.11；Windows/Linux 和其他 Python 版本尚未实测。**
+
+### 使用原生 UI 查看实验
+
+保持现有依赖，不安装 MuJoCo Playground。在本实验目录运行：
+
+```shell
+# 按配置顺序查看四项；关闭当前窗口后进入下一项。
+uv run --locked --offline python -m physics_lab.view
+
+# 也可以只打开一项：torque、coupling、pendulum、contact。
+uv run --locked --offline python -m physics_lab.view --case pendulum
+```
+
+入口使用官方 `mujoco.viewer.launch` 的 managed 模式，由原生查看器管理物理线程和交互。**此入口使用 `python`，不使用 `mjpython`。** 官方文档中 macOS 的 `mjpython` 要求针对 `launch_passive` 模式；这两种启动方式不能直接混用。[固定版本查看器说明](https://github.com/google-deepmind/mujoco/blob/a892750516336d8358949f4518fcc4fbbd85beae/doc/python.rst#L48-L97)
+
+| 操作 | 用途 |
+| --- | --- |
+| `Space` | 暂停/继续 |
+| `Simulation > Load key` | 载入增加的 `experiment_initial` 关键帧，恢复配置中的初态和输入 |
+| `Rendering > Frame > Body` | 显示刚体坐标轴，便于观察均匀球形转子的转动 |
+| 原生控制面板 | 检查或调整关节、执行器和仿真设置 |
+| 关闭窗口 | 结束当前项；未指定 `--case` 时自动进入下一项 |
+
+`Reset` 恢复模型默认状态，可能清除配置中的力矩或初始角；恢复原实验请使用 `Load key`。关键帧只加在内存中的模型副本里，源 MJCF、配置、依赖锁和基线报告保持不变。
+
+UI 会连续积分直到窗口关闭，不按数值实验的 0.1 s / 2 s 自动结束。`coupling` 的原始数值验收只计算初始状态；UI 另外展示了后续运动，不能把这段轨迹当作已增加的定量验收。交互中修改力矩、关节或物理选项后，也不能直接与基线数值比较。
+
+新增 4 项无窗口测试核对 UI 模型的动力学一致性、初态恢复及单项/顺序启动选择；当前共 14 项测试通过。这些测试使用查看器替身，不代表逐项视觉验收。
 
 ## 3. 文件职责
 
@@ -42,7 +70,9 @@ uv run --locked python -m unittest discover -s tests -v
 | [physics_lab/common.py](physics_lab/common.py) | 加载配置、初始化状态、质量矩阵及同一时刻的动力学采样 |
 | [physics_lab/experiments.py](physics_lab/experiments.py) | 四个算例各自的理论比较与指标 |
 | [physics_lab/__main__.py](physics_lab/__main__.py) | 版本检查、来源核对、执行和报告输出 |
+| [physics_lab/view.py](physics_lab/view.py) | 将配置和初态关键帧交给官方 managed viewer，逐项或单项查看 |
 | [tests/test_physics.py](tests/test_physics.py) | 数值验收、步长收敛、接口语义和配置错误检查 |
+| [tests/test_view.py](tests/test_view.py) | 无窗口检查 UI 模型、关键帧恢复及查看器调用 |
 | [results/baseline.json](results/baseline.json) | 本次实测报告：运行时、配置快照、MJCF 哈希、指标和验收结果 |
 
 模型值与实验参数放在 XML/TOML 中；解析公式中的 `2/5` 等系数来自实心球惯量关系。实验函数只支持各自说明的简化结构，含结构前提检查，不作为任意机器人模型的通用验收器。`coupling` 只做初始状态下的动力学求值，不推进时间。
@@ -76,4 +106,4 @@ uv run --locked python -m unittest discover -s tests -v
 5. `src/engine/engine_core_constraint.c`、`engine_solver.c`：约束构建及数值求解。
 6. 回到 `engine_forward.c`：积分器和状态推进。
 
-本轮未验证 C/C++ 编译、原生调试器单步、GUI、真实机器人、学习策略训练、MJX/MJWarp、柔性体、IPC 和 `discrete` 积分器。本实验主动拒绝 `discrete`，因为其有效质量度量和 `qacc` 语义需要单独适配。
+初轮数值验收没有打开 GUI；后续已增加原生查看器入口，并在本机启动顺序查看进程。用户已确认球形转子的原生窗口正常显示；桌面自动化工具未能识别此 Python 原生窗口，尚未逐项截图验收。未验证 C/C++ 编译、原生调试器单步、真实机器人、学习策略训练、MJX/MJWarp、柔性体、IPC 和 `discrete` 积分器。本实验主动拒绝 `discrete`，因为其有效质量度量和 `qacc` 语义需要单独适配。
