@@ -52,3 +52,8 @@
 ## 运行系统：ROS 2、通信与可视化
 
 - **实验记录：** [WSL ROS 2 最小实验](experiments/ros2_ws/README.md)
+
+## 物理仿真与算法验证
+
+- **源码研究：** [MuJoCo 物理引擎：源码调用链与最小验证](research/mujoco-physics-engine.md)：固定 MuJoCo 3.16.0，核对 Python/C 调用、关节动力学、接触约束与数值积分。
+- **实验记录：** [MuJoCo 最小物理实验](experiments/mujoco_physics/README.md)：独立 Python 环境，包含恒力矩、双关节耦合、重力摆动和落球接触四个算例；已在 macOS arm64 验证，尚未从源码编译或连接真机。

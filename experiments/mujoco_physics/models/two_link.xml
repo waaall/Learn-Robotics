@@ -1,0 +1,23 @@
+<!-- 平面双连杆关闭重力和接触，检查质量矩阵的非对角项及关节耦合。 -->
+<mujoco model="coupled_two_link">
+  <compiler angle="radian"/>
+  <option timestep="0.001" gravity="0 0 0" integrator="Euler"/>
+  <default>
+    <joint type="hinge" axis="0 0 1" damping="0" armature="0"/>
+    <geom type="capsule" size="0.03" contype="0" conaffinity="0"/>
+  </default>
+  <worldbody>
+    <body name="link1" pos="0 0 0.5">
+      <joint name="shoulder"/>
+      <geom fromto="0 0 0 0.5 0 0" mass="1"/>
+      <body name="link2" pos="0.5 0 0">
+        <joint name="elbow"/>
+        <geom fromto="0 0 0 0.5 0 0" mass="1"/>
+      </body>
+    </body>
+  </worldbody>
+  <actuator>
+    <motor name="shoulder_drive" joint="shoulder" gear="1"/>
+    <motor name="elbow_drive" joint="elbow" gear="1"/>
+  </actuator>
+</mujoco>

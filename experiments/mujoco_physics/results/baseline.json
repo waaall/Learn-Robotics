@@ -1,0 +1,251 @@
+{
+  "schema_version": 1,
+  "created_at_utc": "2026-10-16T01:31:51.098904+00:00",
+  "runtime": {
+    "python": "3.12.11",
+    "system": "Darwin",
+    "machine": "arm64",
+    "numpy": "2.5.4",
+    "python_package": "3.16.0",
+    "native_library": "3.16.0"
+  },
+  "source": {
+    "repository": "https://github.com/google-deepmind/mujoco.git",
+    "tag": "3.16.0",
+    "commit": "a892750516336d8358949f4518fcc4fbbd85beae",
+    "checkout": "../../refs/mujoco",
+    "shallow_clone": true,
+    "execution_artifact": "PyPI prebuilt mujoco wheel; not built from the source checkout"
+  },
+  "source_checkout": {
+    "available": true,
+    "commit": "a892750516336d8358949f4518fcc4fbbd85beae",
+    "dirty": false
+  },
+  "config_sha256": "54e09fd8338c0ec8ce2ab116d915cb93ee000a53ca2f4001d604ead429d87f5e",
+  "config": {
+    "runtime": {
+      "expected_version": "3.16.0",
+      "source_manifest": "../upstream.json"
+    },
+    "cases": {
+      "torque": {
+        "kind": "torque",
+        "model": "../models/rotor.xml",
+        "geom": "rotor_geom",
+        "actuator": "drive",
+        "ctrl": [
+          0.02
+        ],
+        "duration": 0.1,
+        "atol": 1e-10
+      },
+      "coupling": {
+        "kind": "coupling",
+        "model": "../models/two_link.xml",
+        "qpos": [
+          0.0,
+          0.5
+        ],
+        "ctrl": [
+          0.1,
+          0.0
+        ],
+        "min_coupling": 0.01,
+        "min_passive_acceleration": 0.01,
+        "atol": 1e-10
+      },
+      "pendulum": {
+        "kind": "pendulum",
+        "model": "../models/pendulum.xml",
+        "joint": "pivot",
+        "body": "link",
+        "qpos": [
+          0.4
+        ],
+        "duration": 2.0,
+        "atol": 1e-10,
+        "energy_relative_tolerance": 1e-07
+      },
+      "contact": {
+        "kind": "contact",
+        "model": "../models/drop_ball.xml",
+        "ball_geom": "ball_geom",
+        "ground_geom": "ground",
+        "duration": 2.0,
+        "settle_window": 0.25,
+        "height_atol": 0.001,
+        "support_relative_tolerance": 0.001,
+        "speed_atol": 0.001,
+        "residual_atol": 1e-08
+      }
+    }
+  },
+  "results": [
+    {
+      "name": "torque",
+      "kind": "torque",
+      "model_sha256": "41ceab2504fce6d7f774767d1072a161390cc893e5bc15bdf00cf02733cbc07e",
+      "settings": {
+        "nq": 1,
+        "nv": 1,
+        "nu": 1,
+        "timestep": 0.001,
+        "gravity": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "integrator": "mjINT_EULER",
+        "solver": "mjSOL_NEWTON"
+      },
+      "metrics": {
+        "inertia_kg_m2": 0.008000000000000002,
+        "torque_Nm": 0.02,
+        "expected_acceleration_rad_s2": 2.4999999999999996,
+        "actual_acceleration_rad_s2": 2.4999999999999996,
+        "max_acceleration_error": 0.0,
+        "qpos_rad": 0.012625000000000006,
+        "continuous_qpos_rad": 0.012500000000000018,
+        "semi_implicit_qpos_rad": 0.012625000000000018,
+        "continuous_position_error_rad": 0.00012499999999998797,
+        "semi_implicit_position_error_rad": 1.214306433183765e-17,
+        "time_s": 0.10000000000000007
+      },
+      "checks": {
+        "actuator_torque_matches": true,
+        "acceleration_matches": true,
+        "discrete_integration_matches": true,
+        "dynamics_residual_small": true
+      },
+      "passed": true
+    },
+    {
+      "name": "coupling",
+      "kind": "coupling",
+      "model_sha256": "755532f9b9e1699072dfa1e1aec47cd1135a3f83470b2b29497feaed96b7856c",
+      "settings": {
+        "nq": 2,
+        "nv": 2,
+        "nu": 2,
+        "timestep": 0.001,
+        "gravity": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "integrator": "mjINT_EULER",
+        "solver": "mjSOL_NEWTON"
+      },
+      "metrics": {
+        "mass_matrix": [
+          [
+            0.643538479978766,
+            0.196769239989383
+          ],
+          [
+            0.196769239989383,
+            0.08707141975308642
+          ]
+        ],
+        "joint_torque_Nm": [
+          0.1,
+          0.0
+        ],
+        "qacc_rad_s2": [
+          0.5028473806925938,
+          -1.1363648050085495
+        ],
+        "matrix_solve_qacc_rad_s2": [
+          0.502847380692594,
+          -1.13636480500855
+        ],
+        "diagonal_approximation_qacc_rad_s2": [
+          0.1553908633455758,
+          0.0
+        ],
+        "dynamics_residual": 2.7755575615628914e-17
+      },
+      "checks": {
+        "mass_matrix_has_coupling": true,
+        "unpowered_joint_accelerates": true,
+        "coupled_solve_matches": true,
+        "dynamics_residual_small": true
+      },
+      "passed": true
+    },
+    {
+      "name": "pendulum",
+      "kind": "pendulum",
+      "model_sha256": "c6bf96ba4b5f1da27046963cc416bc661e84756ed36d71e8c771b321744d8e2a",
+      "settings": {
+        "nq": 1,
+        "nv": 1,
+        "nu": 0,
+        "timestep": 0.001,
+        "gravity": [
+          0.0,
+          0.0,
+          -9.81
+        ],
+        "integrator": "mjINT_RK4",
+        "solver": "mjSOL_NEWTON"
+      },
+      "metrics": {
+        "initial_gravity_torque_Nm": -1.9100969690239307,
+        "initial_bias_Nm": 1.9100969690239307,
+        "initial_expected_qacc_rad_s2": -5.6112239716382275,
+        "initial_actual_qacc_rad_s2": -5.6112239716382275,
+        "initial_energy_J": 7.254195824415849,
+        "max_energy_drift_J": 5.684341886080802e-14,
+        "max_relative_energy_drift": 7.835936640900563e-15,
+        "final_qpos_rad": 0.13301411844632527
+      },
+      "checks": {
+        "gravity_acceleration_matches": true,
+        "bias_is_negative_gravity_torque": true,
+        "energy_drift_small": true
+      },
+      "passed": true
+    },
+    {
+      "name": "contact",
+      "kind": "contact",
+      "model_sha256": "f82952eb380298969d3b7901c9de411539a5982dbfb1932e77bfe4ae952d92b9",
+      "settings": {
+        "nq": 7,
+        "nv": 6,
+        "nu": 0,
+        "timestep": 0.001,
+        "gravity": [
+          0.0,
+          0.0,
+          -9.81
+        ],
+        "integrator": "mjINT_IMPLICITFAST",
+        "solver": "mjSOL_NEWTON"
+      },
+      "metrics": {
+        "nq": 7,
+        "nv": 6,
+        "weight_N": 9.81,
+        "settled_mean_support_N": 9.81,
+        "support_relative_error": 0.0,
+        "settled_mean_gap_m": -0.0003671818424709483,
+        "max_penetration_m": 0.028607633206747543,
+        "max_contact_count": 1,
+        "final_speed_norm": 6.509907662692542e-15,
+        "max_dynamics_residual": 2.928750575392769e-10
+      },
+      "checks": {
+        "contact_detected": true,
+        "support_balances_weight": true,
+        "settled_gap_small": true,
+        "ball_settled": true,
+        "dynamics_residual_small": true
+      },
+      "passed": true
+    }
+  ],
+  "passed": true
+}

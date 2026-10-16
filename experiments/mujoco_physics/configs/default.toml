@@ -1,0 +1,44 @@
+# 几何和惯量在 MJCF 中定义；控制输入、初态和验收阈值集中在此。
+[runtime]
+expected_version = "3.16.0"
+source_manifest = "../upstream.json"
+
+[cases.torque]
+kind = "torque"
+model = "../models/rotor.xml"
+geom = "rotor_geom"
+actuator = "drive"
+ctrl = [0.02]
+duration = 0.1
+atol = 1e-10
+
+[cases.coupling]
+kind = "coupling"
+model = "../models/two_link.xml"
+qpos = [0.0, 0.5]
+ctrl = [0.1, 0.0]
+min_coupling = 0.01
+min_passive_acceleration = 0.01
+atol = 1e-10
+
+[cases.pendulum]
+kind = "pendulum"
+model = "../models/pendulum.xml"
+joint = "pivot"
+body = "link"
+qpos = [0.4]
+duration = 2.0
+atol = 1e-10
+energy_relative_tolerance = 1e-7
+
+[cases.contact]
+kind = "contact"
+model = "../models/drop_ball.xml"
+ball_geom = "ball_geom"
+ground_geom = "ground"
+duration = 2.0
+settle_window = 0.25
+height_atol = 0.001
+support_relative_tolerance = 0.001
+speed_atol = 0.001
+residual_atol = 1e-8

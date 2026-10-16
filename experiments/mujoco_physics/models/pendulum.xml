@@ -1,0 +1,14 @@
+<!-- 无阻尼单摆使用 RK4，检查重力矩、初始角加速度和机械能变化。 -->
+<mujoco model="gravity_pendulum">
+  <compiler angle="radian"/>
+  <option timestep="0.001" gravity="0 0 -9.81" integrator="RK4">
+    <flag energy="enable"/>
+  </option>
+  <worldbody>
+    <body name="link" pos="0 0 1.2">
+      <joint name="pivot" type="hinge" axis="0 1 0" damping="0"/>
+      <geom type="capsule" fromto="0 0 0 0 0 -1" size="0.03" mass="1"
+            contype="0" conaffinity="0"/>
+    </body>
+  </worldbody>
+</mujoco>

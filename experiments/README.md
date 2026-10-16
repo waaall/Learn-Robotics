@@ -1,4 +1,4 @@
-# 三个独立实验项目
+# 独立实验项目
 
 | 项目 | 职责 | 第一版边界 |
 | --- | --- | --- |
@@ -6,7 +6,9 @@
 | [training](training/README.md) | 公开数据准备、SmolVLA 微调、验证 loss、完整状态恢复 | 不连接机械臂，不提供推理命令 |
 | [inference](inference/README.md) | 离线预测比较、单夹爪视角实时输入诊断 | 不更新参数，不执行真机动作 |
 
-它们是**同一 Git 仓库中的独立部署项目**，不是三个新仓库。每个项目各有 `pyproject.toml`、`uv.lock`、`.venv`、`setup.ps1`、`run.ps1`、环境预检和 README；安装其中一个不会同步另外两个的环境。第一版锁文件针对 Windows x64、Python 3.12/3.13、CUDA 12.8 PyTorch wheel；其他平台不能据此宣称已支持。
+以上三个项目是**同一 Git 仓库中的独立部署项目**，不是三个新仓库。每个项目各有 `pyproject.toml`、`uv.lock`、`.venv`、`setup.ps1`、`run.ps1`、环境预检和 README；安装其中一个不会同步另外两个的环境。第一版锁文件针对 Windows x64、Python 3.12/3.13、CUDA 12.8 PyTorch wheel；其他平台不能据此宣称已支持。
+
+另有独立的 [MuJoCo 物理计算实验](mujoco_physics/README.md)，固定 MuJoCo 3.16.0，研究执行器、关节耦合、重力和接触计算。它使用自己的 `pyproject.toml`、`uv.lock` 和 `.venv`，以 Python 模块命令运行；已在 macOS arm64 验证，不依赖上述 Windows 部署脚本，不连接硬件。
 
 ## 共享代码与机器配置
 

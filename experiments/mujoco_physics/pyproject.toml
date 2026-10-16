@@ -1,0 +1,10 @@
+# 固定物理引擎版本；本实验使用独立环境，不改变已有训练和硬件依赖。
+[project]
+name = "robot-mujoco-physics"
+version = "0.1.0"
+description = "Reproducible MuJoCo physics pipeline experiments"
+requires-python = ">=3.12,<3.14"
+dependencies = ["mujoco==3.16.0", "numpy>=2,<3"]
+
+[tool.uv]
+package = false

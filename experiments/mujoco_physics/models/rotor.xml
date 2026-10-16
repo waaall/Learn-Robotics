@@ -1,0 +1,14 @@
+<!-- 球形转子绕质心转动：关闭重力和碰撞，单独检查力矩、惯量与积分。 -->
+<mujoco model="centered_rotor">
+  <option timestep="0.001" gravity="0 0 0" integrator="Euler"/>
+  <worldbody>
+    <body name="rotor" pos="0 0 0.5">
+      <joint name="spin" type="hinge" axis="0 0 1" damping="0" armature="0"/>
+      <geom name="rotor_geom" type="sphere" size="0.1" mass="2"
+            contype="0" conaffinity="0" rgba="0.2 0.5 0.8 1"/>
+    </body>
+  </worldbody>
+  <actuator>
+    <motor name="drive" joint="spin" gear="1"/>
+  </actuator>
+</mujoco>

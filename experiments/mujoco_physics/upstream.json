@@ -1,0 +1,8 @@
+{
+  "repository": "https://github.com/google-deepmind/mujoco.git",
+  "tag": "3.16.0",
+  "commit": "a892750516336d8358949f4518fcc4fbbd85beae",
+  "checkout": "../../refs/mujoco",
+  "shallow_clone": true,
+  "execution_artifact": "PyPI prebuilt mujoco wheel; not built from the source checkout"
+}
