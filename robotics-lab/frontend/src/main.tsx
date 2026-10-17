@@ -11,6 +11,7 @@ import {
 } from "./widgets";
 import {
   defaults,
+  canonicalLessonId,
   GEOMETRIC,
   HOME,
   type Course,
@@ -47,12 +48,15 @@ const LABELS: Record<string, string> = {
   joint_error_rad: "参考跟踪误差 / rad",
   tool_target_error_m: "末端目标误差 / m",
   max_cube_height_m: "方块最高高度 / m",
+  joint_displacement_rad: "相对初态构型偏移 / rad",
+  tool_height_change_m: "末端高度变化 / m",
+  velocity_error_m_s: "预测与观测速度误差 / m·s⁻¹",
 };
 
 function App() {
   const [courses, setCourses] = useState<Course[]>([]),
     [selected, setSelected] = useState(
-      location.hash.slice(1) || "panda-structure",
+      canonicalLessonId(location.hash.slice(1)) || "panda-structure",
     );
   const [system, setSystem] = useState<System | null>(null),
     [state, setState] = useState<Observation | null>(null);
@@ -69,12 +73,21 @@ function App() {
     }
   });
   const [joint, setJoint] = useState(0),
+    [motionJoint, setMotionJoint] = useState(1),
     [completed, setCompleted] = useState<string[]>(() => {
       try {
         const saved = JSON.parse(
           localStorage.getItem("robotics-lab.completed") || "[]",
         );
-        return Array.isArray(saved) ? saved : [];
+        return Array.isArray(saved)
+          ? [
+              ...new Set(
+                saved
+                  .filter((id): id is string => typeof id === "string")
+                  .map(canonicalLessonId),
+              ),
+            ]
+          : [];
       } catch {
         return [];
       }
@@ -97,6 +110,15 @@ function App() {
     ? `${location.protocol}//${location.hostname}:${session.port}/`
     : undefined;
   const latest = state || run?.state;
+  const controlPanel = (
+    <Controls
+      mode={mode}
+      settings={settings}
+      set={setSettings}
+      joint={motionJoint}
+      setJoint={setMotionJoint}
+    />
+  );
 
   useEffect(() => {
     const controller = new AbortController();
@@ -116,6 +138,7 @@ function App() {
           ) || lessons[0];
         setSelected(initialLesson.id);
         setSettings(defaults(initialLesson.mode));
+        setJoint(["jacobian", "gravity"].includes(initialLesson.mode) ? 1 : 0);
       })
       .catch((e) => {
         if (!controller.signal.aborted) setError(String(e));
@@ -173,7 +196,7 @@ function App() {
   }, [directoryOpen]);
   useEffect(() => {
     const onHash = () => {
-      const id = location.hash.slice(1);
+      const id = canonicalLessonId(location.hash.slice(1));
       if (
         id &&
         id !== selection.current &&
@@ -224,7 +247,8 @@ function App() {
       setState(null);
       setHistory([]);
       setRun(null);
-      setJoint(0);
+      setJoint(["panda-jacobian", "panda-gravity"].includes(id) ? 1 : 0);
+      setMotionJoint(1);
       actions.current = [];
       if (window.matchMedia("(max-width: 1100px)").matches)
         showDirectory(false);
@@ -272,14 +296,20 @@ function App() {
   async function control(action: string) {
     await perform(action, async () => {
       if (action === "grasp") await command("configure");
-      await command(
+      const result = await command(
         action,
         action === "pause" ? { paused: !state?.paused } : {},
       );
       if (action === "reset") {
         setSettings(defaults(mode));
+        setMotionJoint(1);
         setHistory([]);
       }
+      if (action === "gravity-release" || action === "gravity-hold") {
+        setSettings({ ...defaults(mode), compensation: result.compensation });
+        setHistory([]);
+      }
+      if (action === "jacobian-run") setHistory([]);
     });
   }
   function toggleCompleted() {
@@ -575,14 +605,14 @@ function App() {
                     className="experiment-inspector"
                     aria-label="实验观测与参数"
                   >
-                    <Readings state={latest} mode={mode} live={!!state} />
-                    <Controls
+                    {mode === "jacobian" && controlPanel}
+                    <Readings
+                      state={latest}
                       mode={mode}
-                      settings={settings}
-                      set={setSettings}
-                      joint={joint}
-                      setJoint={setJoint}
+                      live={!!state}
+                      joint={motionJoint}
                     />
+                    {mode !== "jacobian" && controlPanel}
                   </aside>
                 )}
               </div>
@@ -600,7 +630,7 @@ function App() {
                   <div className="panel-heading">
                     <h3>交互过程记录</h3>
                     <div className="toolbar">
-                      {mode !== "grasp" && (
+                      {mode !== "grasp" && mode !== "jacobian" && (
                         <select
                           aria-label="曲线关节"
                           value={joint}

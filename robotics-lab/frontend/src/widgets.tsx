@@ -1,4 +1,5 @@
 import katex from "katex";
+import { useId } from "react";
 import {
   HOME,
   LIMITS,
@@ -72,15 +73,46 @@ export function Theory({ lesson }: { lesson: Lesson }) {
     </article>
   );
 }
-export function Matrix({ values }: { values: number[][] }) {
+export function Matrix({
+  values,
+  highlightColumn,
+}: {
+  values: number[][];
+  highlightColumn?: number;
+}) {
   return (
     <div className="matrix-wrap">
       <table className="matrix">
+        {highlightColumn !== undefined && (
+          <thead>
+            <tr>
+              <th>世界轴</th>
+              {values[0].map((_, i) => (
+                <th
+                  key={i}
+                  className={
+                    i === highlightColumn ? "active-column" : undefined
+                  }
+                >
+                  q{i + 1}
+                </th>
+              ))}
+            </tr>
+          </thead>
+        )}
         <tbody>
           {values.map((row, i) => (
             <tr key={i}>
+              {highlightColumn !== undefined && <th>{["x", "y", "z"][i]}</th>}
               {row.map((v, j) => (
-                <td key={j}>{num(v, 3)}</td>
+                <td
+                  key={j}
+                  className={
+                    j === highlightColumn ? "active-column" : undefined
+                  }
+                >
+                  {num(v, 3)}
+                </td>
               ))}
             </tr>
           ))}
@@ -103,18 +135,27 @@ export function Chart({
   if (samples.length < 2)
     return <div className="empty-chart">运行实验后显示观测曲线。</div>;
   const cube = mode === "grasp";
+  const velocity = mode === "jacobian";
   const series = [
     samples.map((s) =>
-      cube
-        ? (s.cube_height ?? s.cube_position?.[2] ?? 0)
-        : (s.joints?.[joint] ?? s.value ?? 0),
+      velocity
+        ? Math.hypot(...(s.cartesian_velocity ?? [0, 0, 0]))
+        : cube
+          ? (s.cube_height ?? s.cube_position?.[2] ?? 0)
+          : (s.joints?.[joint] ?? s.value ?? 0),
     ),
   ];
   if (
-    ["joint-control", "trajectory"].includes(mode) &&
+    ["structure", "joint-control", "trajectory"].includes(mode) &&
     samples[0].reference_joints
   )
     series.push(samples.map((s) => s.reference_joints?.[joint] ?? 0));
+  if (velocity)
+    series.push(
+      samples.map((s) =>
+        Math.hypot(...(s.measured_cartesian_velocity ?? [0, 0, 0])),
+      ),
+    );
   const all = series.flat(),
     lo = Math.min(...all),
     hi = Math.max(...all),
@@ -126,19 +167,21 @@ export function Chart({
     <div className="chart">
       <div className="chart-caption">
         <span>
-          {cube
-            ? "方块高度 / m"
-            : mode === "physics"
-              ? `观测量 / ${unit}`
-              : `关节 ${joint + 1} / rad`}
+          {velocity
+            ? "末端速度大小 / m·s⁻¹"
+            : cube
+              ? "方块高度 / m"
+              : mode === "physics"
+                ? `观测量 / ${unit}`
+                : `关节 ${joint + 1} / rad`}
         </span>
         <span>
           <i />
-          实际值{" "}
+          {velocity ? "雅可比预测" : "实际值"}{" "}
           {series.length > 1 && (
             <>
               <i className="reference" />
-              参考值
+              {velocity ? "位置差分观测" : "参考值"}
             </>
           )}
         </span>
@@ -146,7 +189,13 @@ export function Chart({
       <svg
         viewBox="0 0 640 170"
         role="img"
-        aria-label={cube ? "方块实际高度曲线" : "实际状态与参考曲线"}
+        aria-label={
+          velocity
+            ? "雅可比预测与位置差分观测速度大小曲线"
+            : cube
+              ? "方块实际高度曲线"
+              : "实际状态与参考曲线"
+        }
       >
         {[30, 85, 140].map((y) => (
           <path key={y} d={`M45 ${y}H625`} className="chart-grid" />
@@ -195,6 +244,47 @@ export function Controls({
 }: ControlsProps) {
   const update = <K extends keyof Settings>(key: K, value: Settings[K]) =>
     set({ ...s, [key]: value });
+  if (mode === "gravity") return null;
+  const jointInputs = (
+    <div className="joint-controls">
+      {s.joints.map((v, i) => (
+        <label className="range-row" key={i}>
+          <span title={`限位 ${LIMITS[i][0]} 至 ${LIMITS[i][1]} rad`}>
+            关节 {i + 1}
+          </span>
+          <input
+            aria-label={`关节 ${i + 1} 目标角度`}
+            type="range"
+            min={LIMITS[i][0]}
+            max={LIMITS[i][1]}
+            step="any"
+            value={v}
+            onChange={(e) =>
+              update(
+                "joints",
+                s.joints.map((q, j) => (j === i ? +e.target.value : q)),
+              )
+            }
+          />
+          <input
+            className="joint-number"
+            aria-label={`关节 ${i + 1} 角度数值`}
+            type="number"
+            min={LIMITS[i][0]}
+            max={LIMITS[i][1]}
+            step="0.01"
+            value={Number(v.toFixed(5))}
+            onChange={(e) =>
+              update(
+                "joints",
+                s.joints.map((q, j) => (j === i ? +e.target.value : q)),
+              )
+            }
+          />
+        </label>
+      ))}
+    </div>
+  );
   return (
     <div className="panel controls">
       <div className="panel-heading">
@@ -203,46 +293,15 @@ export function Controls({
       </div>
       {["structure", "fk", "jacobian", "joint-control", "trajectory"].includes(
         mode,
-      ) && (
-        <div className="joint-controls">
-          {s.joints.map((v, i) => (
-            <label className="range-row" key={i}>
-              <span title={`限位 ${LIMITS[i][0]} 至 ${LIMITS[i][1]} rad`}>
-                关节 {i + 1}
-              </span>
-              <input
-                aria-label={`关节 ${i + 1} 目标角度`}
-                type="range"
-                min={LIMITS[i][0]}
-                max={LIMITS[i][1]}
-                step="any"
-                value={v}
-                onChange={(e) =>
-                  update(
-                    "joints",
-                    s.joints.map((q, j) => (j === i ? +e.target.value : q)),
-                  )
-                }
-              />
-              <input
-                className="joint-number"
-                aria-label={`关节 ${i + 1} 角度数值`}
-                type="number"
-                min={LIMITS[i][0]}
-                max={LIMITS[i][1]}
-                step="0.01"
-                value={Number(v.toFixed(5))}
-                onChange={(e) =>
-                  update(
-                    "joints",
-                    s.joints.map((q, j) => (j === i ? +e.target.value : q)),
-                  )
-                }
-              />
-            </label>
-          ))}
-        </div>
-      )}
+      ) &&
+        (mode === "jacobian" ? (
+          <details className="initial-configuration">
+            <summary>起始关节构型 / rad</summary>
+            {jointInputs}
+          </details>
+        ) : (
+          jointInputs
+        ))}
       {["structure", "fk", "joint-control"].includes(mode) && (
         <label className="range-row">
           <span>夹爪开口</span>
@@ -283,9 +342,9 @@ export function Controls({
       )}
       {["joint-control", "trajectory"].includes(mode) && (
         <label className="range-row">
-          <span>增益倍率</span>
+          <span>位置增益倍率</span>
           <input
-            aria-label="增益倍率"
+            aria-label="位置增益倍率"
             type="range"
             min="0.05"
             max="1.5"
@@ -296,7 +355,22 @@ export function Controls({
           <output>{s.gain_scale.toFixed(2)}</output>
         </label>
       )}
-      {["joint-control", "trajectory", "gravity"].includes(mode) && (
+      {["joint-control", "trajectory"].includes(mode) && (
+        <label className="range-row">
+          <span>阻尼倍率</span>
+          <input
+            aria-label="阻尼倍率"
+            type="range"
+            min="0.05"
+            max="2"
+            step="0.01"
+            value={s.damping_scale}
+            onChange={(e) => update("damping_scale", +e.target.value)}
+          />
+          <output>{s.damping_scale.toFixed(2)}</output>
+        </label>
+      )}
+      {["joint-control", "trajectory"].includes(mode) && (
         <label className="check">
           <input
             type="checkbox"
@@ -315,7 +389,12 @@ export function Controls({
               value={joint}
               onChange={(e) => {
                 setJoint(+e.target.value);
-                update("velocity", Array(7).fill(0));
+                update(
+                  "velocity",
+                  Array.from({ length: 7 }, (_, i) =>
+                    i === +e.target.value ? s.velocity[joint] || 0.05 : 0,
+                  ),
+                );
               }}
             >
               {HOME.map((_, i) => (
@@ -343,6 +422,9 @@ export function Controls({
             />
             <output>{s.velocity[joint].toFixed(2)}</output>
           </label>
+          <p className="control-hint">
+            每次运行 2 秒；速度反向后，预测与观测箭头应同时反向。
+          </p>
         </div>
       )}
       {mode === "trajectory" && (
@@ -378,7 +460,11 @@ export function Controls({
           </label>
         </>
       )}
-      <p className="control-hint">调整参数后，使用实验区下方的操作按钮应用。</p>
+      <p className="control-hint">
+        {mode === "structure"
+          ? "输入目标角度后点击移动到目标。默认位置控制与重力补偿保持开启。"
+          : "调整参数后，使用实验区下方的操作按钮应用。"}
+      </p>
     </div>
   );
 }
@@ -402,15 +488,47 @@ export function ExperimentActions({
           className="button primary"
           disabled={busy || !ready}
           onClick={() =>
-            act(mode === "trajectory" ? "trajectory" : "configure")
+            act(
+              mode === "gravity"
+                ? "gravity-release"
+                : mode === "jacobian"
+                  ? "jacobian-run"
+                  : mode === "trajectory"
+                    ? "trajectory"
+                    : "configure",
+            )
           }
         >
-          {mode === "ik"
-            ? "求解并显示构型"
-            : mode === "trajectory"
-              ? "执行轨迹"
-              : "应用参数"}
+          {mode === "gravity"
+            ? "关闭补偿并释放"
+            : mode === "jacobian"
+              ? "设置构型并运行 2 秒"
+              : mode === "structure" || mode === "joint-control"
+                ? "移动到目标"
+                : mode === "ik"
+                  ? "求解并显示构型"
+                  : mode === "trajectory"
+                    ? "执行轨迹"
+                    : "应用参数"}
         </button>
+        {mode === "gravity" && (
+          <button
+            className="button"
+            disabled={busy || !ready}
+            onClick={() => act("gravity-hold")}
+          >
+            恢复初态并开启补偿
+          </button>
+        )}
+        {mode === "jacobian" && (
+          <button
+            className="button"
+            disabled={busy || !ready}
+            onClick={() => act("jacobian-stop")}
+          >
+            停止运动
+          </button>
+        )}
         {mode === "grasp" && (
           <button
             className="button"
@@ -448,14 +566,160 @@ export function ExperimentActions({
     </div>
   );
 }
+function VelocityReadings({
+  state: s,
+  joint,
+}: {
+  state: Observation;
+  joint: number;
+}) {
+  const markerId = useId().replaceAll(":", "");
+  const sample = s.velocity_comparison;
+  const activeJoint = sample?.joint_index ?? joint;
+  const predicted = sample?.predicted ?? [0, 0, 0];
+  const measured = sample?.measured ?? [0, 0, 0];
+  const scale =
+    76 / Math.max(Math.hypot(...predicted), Math.hypot(...measured), 0.001);
+  const project = (v: number[], factor: number): [number, number] => [
+    140 + (v[0] - v[1]) * 0.866 * factor,
+    118 - (0.5 * (v[0] + v[1]) + v[2]) * factor,
+  ];
+  const colors = ["#217797", "#ce7232"];
+  return (
+    <section className="velocity-comparison" aria-label="雅可比预测与观测对照">
+      <p className="experiment-phase">{s.phase}</p>
+      <svg
+        className="velocity-vectors"
+        viewBox="0 0 280 200"
+        role="img"
+        aria-label="世界坐标下预测与位置差分观测速度的等轴投影箭头"
+      >
+        <defs>
+          {colors.map((color, i) => (
+            <marker
+              key={color}
+              id={`${markerId}-${i}`}
+              markerUnits="userSpaceOnUse"
+              markerWidth="9"
+              markerHeight="9"
+              refX="6"
+              refY="3.5"
+              orient="auto"
+            >
+              <path d="M0 0 L7 3.5 L0 7 Z" fill={color} />
+            </marker>
+          ))}
+        </defs>
+        {[
+          [1, 0, 0],
+          [0, 1, 0],
+          [0, 0, 1],
+        ].map((axis, i) => {
+          const [x, y] = project(axis, 58);
+          return (
+            <g key={i}>
+              <line x1="140" y1="118" x2={x} y2={y} stroke="#a8bac6" />
+              <text x={x + 5} y={y - 3}>
+                {["x", "y", "z"][i]}
+              </text>
+            </g>
+          );
+        })}
+        {[predicted, measured].map((v, i) => {
+          const [x, y] = project(v, scale);
+          return Math.hypot(...v) > 1e-10 ? (
+            <line
+              key={i}
+              x1="140"
+              y1="118"
+              x2={x}
+              y2={y}
+              stroke={colors[i]}
+              strokeWidth={i ? 2 : 5}
+              strokeDasharray={i ? "5 3" : undefined}
+              markerEnd={`url(#${markerId}-${i})`}
+            />
+          ) : null;
+        })}
+        <circle cx="140" cy="118" r="3" fill="#425e72" />
+        {!sample && (
+          <text x="140" y="178" textAnchor="middle">
+            运行单关节运动后显示速度箭头
+          </text>
+        )}
+      </svg>
+      <div className="velocity-legend">
+        <span>
+          <i />
+          雅可比预测
+        </span>
+        <span>
+          <i />
+          位置差分观测
+        </span>
+      </div>
+      <p className="control-hint">
+        世界坐标等轴投影，两支箭头共用缩放；三维差异请对照三轴数值与速度误差。
+      </p>
+      <table className="velocity-table">
+        <thead>
+          <tr>
+            <th>m/s</th>
+            <th>x</th>
+            <th>y</th>
+            <th>z</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <th>预测</th>
+            {predicted.map((v, i) => (
+              <td key={i}>{num(v, 5)}</td>
+            ))}
+          </tr>
+          <tr>
+            <th>观测</th>
+            {measured.map((v, i) => (
+              <td key={i}>{num(v, 5)}</td>
+            ))}
+          </tr>
+        </tbody>
+      </table>
+      <p className="reading-line">
+        速度误差：{sample ? sample.error_norm.toExponential(2) : "—"} m/s
+      </p>
+      <p className="control-hint">
+        {sample
+          ? `采样 ${num(sample.time, 3)} s · 区间 ${num(sample.dt * 1000, 0)} ms · 关节 ${activeJoint + 1} 实际速度 ${num(sample.joint_velocities[activeJoint], 3)} rad/s${s.jacobian_running ? "" : " · 保留末次运动采样"}`
+          : "点击设置构型并运行 2 秒。默认关节 2、速度 0.05 rad/s。"}
+      </p>
+      <p className="matrix-caption">
+        采样区间起点的平移雅可比 · 高亮关节 {activeJoint + 1}
+      </p>
+      <Matrix
+        values={sample?.jacobian ?? s.jacobian}
+        highlightColumn={activeJoint}
+      />
+      <details>
+        <summary>当前构型的平移奇异值</summary>
+        <p className="reading-line">
+          {s.singular_values.map((v) => num(v, 4)).join(" · ")}
+        </p>
+        <p className="control-hint">只描述三维平移任务。</p>
+      </details>
+    </section>
+  );
+}
 export function Readings({
   state: s,
   mode,
   live,
+  joint = 1,
 }: {
   state?: Observation;
   mode: string;
   live: boolean;
+  joint?: number;
 }) {
   if (!s)
     return (
@@ -479,6 +743,31 @@ export function Readings({
             : `仿真时间 ${num(s.time, 2)} s`}
         </span>
       </div>
+      {mode === "gravity" && (
+        <div className="gravity-status">
+          <p className="experiment-phase">
+            {s.compensation
+              ? "补偿开启 · 观察构型保持"
+              : "补偿关闭 · 观察自重下落"}
+          </p>
+          <p>
+            位置伺服关闭，世界重力始终竖直向下 9.81 m/s²。观察机械臂连杆与关节。
+          </p>
+          <dl>
+            <div>
+              <dt>相对初态构型偏移</dt>
+              <dd>{num(s.joint_displacement_rad ?? 0, 4)} rad</dd>
+            </div>
+            <div>
+              <dt>末端高度变化</dt>
+              <dd>{num(s.tool_height_change_m ?? 0, 4)} m</dd>
+            </div>
+          </dl>
+          <p className="control-hint">
+            两个对照按钮都会恢复相同静止初态，再切换补偿并开始运行。
+          </p>
+        </div>
+      )}
       <div className="readings-grid">
         <div>
           <span>末端世界位置 / m</span>
@@ -488,7 +777,7 @@ export function Readings({
           <span>夹爪实际开口 / m</span>
           <strong>{num(s.gripper_width, 4)}</strong>
         </div>
-        {["joint-control", "trajectory"].includes(mode) && (
+        {["structure", "joint-control", "trajectory"].includes(mode) && (
           <div>
             <span>参考跟踪误差 / rad</span>
             <strong>
@@ -528,31 +817,21 @@ export function Readings({
           <Matrix values={s.tool_rotation} />
         </details>
       )}
-      {mode === "jacobian" && (
-        <>
-          <p className="reading-line">
-            奇异值：{s.singular_values.map((v) => num(v, 4)).join(" · ")}
-          </p>
-          <details>
-            <summary>平移雅可比 J · 世界坐标系</summary>
-            <Matrix values={s.jacobian} />
-          </details>
-          <p className="reading-line">
-            末端速度 / m·s⁻¹：
-            {s.cartesian_velocity.map((v) => num(v, 4)).join(" · ")}
-          </p>
-        </>
-      )}
+      {mode === "jacobian" && <VelocityReadings state={s} joint={joint} />}
       {["joint-control", "gravity", "trajectory"].includes(mode) && (
         <details>
-          <summary>关节角度、执行器力矩与重力项</summary>
+          <summary>
+            {mode === "gravity"
+              ? "关节角度、重力力矩与补偿输入"
+              : "关节角度、执行器力矩与重力项"}
+          </summary>
           <div className="matrix-wrap">
             <table className="joint-table">
               <thead>
                 <tr>
                   <th>关节</th>
                   <th>实际 rad</th>
-                  <th>执行器 N·m</th>
+                  <th>{mode === "gravity" ? "补偿 N·m" : "执行器 N·m"}</th>
                   <th>重力项 N·m</th>
                 </tr>
               </thead>
@@ -561,7 +840,14 @@ export function Readings({
                   <tr key={i}>
                     <th>{i + 1}</th>
                     <td>{num(q, 3)}</td>
-                    <td>{num(s.actuator_torque[i], 2)}</td>
+                    <td>
+                      {num(
+                        (mode === "gravity"
+                          ? s.compensation_torque?.[i]
+                          : s.actuator_torque[i]) ?? 0,
+                        2,
+                      )}
+                    </td>
                     <td>{num(s.gravity_torque[i], 2)}</td>
                   </tr>
                 ))}

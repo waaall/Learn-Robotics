@@ -36,7 +36,7 @@ class SessionManager:
 
     def start(self, experiment_id: str) -> dict:
         with self.lock:
-            get_experiment(experiment_id)
+            experiment_id = get_experiment(experiment_id).id
             check = viewer_capability()
             if not check["available"]:
                 raise RuntimeError(check["reason"])

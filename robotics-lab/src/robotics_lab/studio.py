@@ -28,8 +28,13 @@ class PandaStudio(step_control.StepControl):
         path = self.bridge.with_suffix(".state.json")
         temporary = path.with_suffix(".tmp")
         temporary.write_text(json.dumps(state, ensure_ascii=False, allow_nan=False), encoding="utf-8")
-        temporary.replace(path)
+        try:
+            temporary.replace(path)
+        except PermissionError:
+            # Windows 读取 DrvFS 文件时可能短暂禁止替换；保留上一份状态，下轮重试。
+            return False
         self.last_write = time.monotonic()
+        return True
 
     def _command(self):
         path = self.bridge.with_suffix(".command.json")
@@ -47,6 +52,18 @@ class PandaStudio(step_control.StepControl):
                 self.controller.reset()
             elif action == "configure":
                 self.controller.configure(request.get("settings", {}))
+            elif action in {"gravity-release", "gravity-hold"}:
+                self.controller.start_gravity_trial(action == "gravity-hold")
+                self.budget = 0
+                self.step_control.set_pause_state(sim.PauseState.UNPAUSED)
+            elif action == "jacobian-run":
+                self.controller.configure(request.get("settings", {}))
+                self.controller.start_jacobian()
+                self.step_control.set_pause_state(sim.PauseState.UNPAUSED)
+            elif action == "jacobian-stop":
+                if self.controller.mode != "jacobian":
+                    raise ValueError("请在雅可比课停止单关节运动")
+                self.controller.stop_jacobian()
             elif action == "trajectory":
                 self.controller.configure(request.get("settings", {}))
                 self.controller.start_motion()

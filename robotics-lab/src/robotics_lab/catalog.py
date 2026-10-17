@@ -66,6 +66,8 @@ def catalog() -> dict[str, Experiment]:
 
 
 def get_experiment(identifier: str) -> Experiment:
+    from .curriculum import LESSON_ALIASES
+    identifier = LESSON_ALIASES.get(identifier, identifier)
     try:
         return catalog()[identifier]
     except KeyError:

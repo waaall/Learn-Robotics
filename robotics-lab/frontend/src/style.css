@@ -1,4 +1,6 @@
 :root {
+  --velocity-prediction: #217797;
+  --velocity-observation: #ce7232;
   --header-height: 64px;
   font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
   color: #223b52;
@@ -820,6 +822,131 @@ summary {
   color: #315873;
   background: #f0f5f8;
   border-bottom: 2px solid #fbfcfd;
+}
+.matrix th {
+  padding: 6px 5px;
+  color: #617584;
+  font-weight: 500;
+  white-space: nowrap;
+}
+.matrix .active-column {
+  background: #d9edf3;
+  color: #175e78;
+  font-weight: 700;
+  box-shadow: inset 0 -2px #217797;
+}
+.velocity-comparison,
+.gravity-status {
+  padding: 0 16px 16px;
+}
+.velocity-comparison .reading-line,
+.velocity-comparison .control-hint {
+  margin: 7px 0;
+  padding: 0;
+}
+.experiment-phase {
+  color: #315873;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 8px 0;
+}
+.velocity-vectors {
+  display: block;
+  width: 100%;
+  max-height: 190px;
+  background: #f0f5f8;
+  border: 1px solid #dce6ec;
+  border-radius: 5px;
+}
+.velocity-vectors text {
+  fill: #617584;
+  font-size: 11px;
+}
+.velocity-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  font-size: 11px;
+  margin-top: 8px;
+}
+.velocity-legend i {
+  display: inline-block;
+  width: 17px;
+  margin: 0 5px 3px 0;
+  border-top: 3px solid var(--velocity-prediction);
+}
+.velocity-legend span + span i {
+  border-color: var(--velocity-observation);
+  border-top-style: dashed;
+}
+.velocity-table {
+  width: 100%;
+  border-collapse: collapse;
+  font:
+    11px Consolas,
+    monospace;
+  white-space: nowrap;
+}
+.velocity-table th,
+.velocity-table td {
+  text-align: right;
+  padding: 5px 3px;
+  border-bottom: 1px solid #dce6ec;
+  font-weight: 400;
+}
+.velocity-table th:first-child {
+  text-align: left;
+}
+.velocity-table tbody tr:first-child {
+  color: var(--velocity-prediction);
+}
+.velocity-table tbody tr + tr {
+  color: #a45320;
+}
+.matrix-caption {
+  margin-top: 14px;
+  font-size: 11px;
+  color: #315873;
+}
+.velocity-comparison .matrix {
+  font-size: 10px;
+}
+.velocity-comparison .matrix th,
+.velocity-comparison .matrix td {
+  padding: 6px 2px;
+}
+.velocity-comparison details {
+  margin: 12px 0 0;
+}
+.initial-configuration {
+  margin: 12px 18px;
+  font-size: 12px;
+}
+.initial-configuration .joint-controls {
+  padding: 12px 0 0;
+}
+.gravity-status > p:not(.experiment-phase) {
+  color: #617584;
+  font-size: 12px;
+}
+.gravity-status dl {
+  display: grid;
+  gap: 10px;
+  margin: 14px 0;
+}
+.gravity-status dt {
+  font-size: 11px;
+  color: #617584;
+}
+.gravity-status dd {
+  margin: 2px 0 0;
+  font:
+    15px Consolas,
+    monospace;
+  color: #315873;
+}
+.gravity-status .control-hint {
+  padding: 0;
 }
 .readings > .matrix-wrap {
   margin: 0 18px 18px;

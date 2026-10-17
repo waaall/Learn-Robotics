@@ -10,7 +10,7 @@ import numpy as np
 from fastapi.testclient import TestClient
 
 from robotics_lab.catalog import catalog, get_experiment
-from robotics_lab.curriculum import courses
+from robotics_lab.curriculum import courses, get_lesson
 from robotics_lab.panda import HOME, PandaController, solve_ik
 from robotics_lab.physics import load_model, simulate
 
@@ -18,7 +18,7 @@ from robotics_lab.physics import load_model, simulate
 class CourseTests(unittest.TestCase):
     def test_course_lessons_resolve_and_have_complete_content(self):
         items = courses()
-        self.assertEqual([len(c["lessons"]) for c in items], [8, 2])
+        self.assertEqual([len(c["lessons"]) for c in items], [7, 2])
         identifiers = []
         for course in items:
             for lesson in course["lessons"]:
@@ -32,7 +32,8 @@ class CourseTests(unittest.TestCase):
         from robotics_lab.api import create_app
         with tempfile.TemporaryDirectory() as directory, TestClient(create_app(Path(directory))) as client:
             self.assertEqual(client.get("/api/courses").status_code, 200)
-            self.assertEqual(client.get("/api/lessons/panda-ik").json()["number"], 6)
+            self.assertEqual(client.get("/api/lessons/panda-ik").json()["number"], 5)
+            self.assertEqual(client.get("/api/lessons/panda-fk").json()["id"], "panda-structure")
             self.assertEqual(client.get("/api/lessons/missing").status_code, 404)
             response = client.post("/api/runs", json={"experiment_id": "panda-ik", "duration": 0.01,
                                                        "settings": {"target": [0.45, 0.12, 0.42]}})
@@ -48,6 +49,7 @@ class CourseTests(unittest.TestCase):
         cases = [
             ({"gripper_width": None}, "夹爪开口"),
             ({"gain_scale": None}, "增益倍率"),
+            ({"damping_scale": None}, "阻尼倍率"),
             ({"profile": []}, "轨迹类型"),
             ({"friction": {}}, "滑动摩擦系数"),
             ({"joints": [{}] * 7}, "关节目标"),
@@ -83,7 +85,7 @@ class CourseTests(unittest.TestCase):
 
 
 class PandaTests(unittest.TestCase):
-    def make_controller(self, mode="fk"):
+    def make_controller(self, mode="structure"):
         model, data = load_model(get_experiment("panda-" + mode))
         return PandaController(model, data, mode)
 
@@ -105,6 +107,69 @@ class PandaTests(unittest.TestCase):
         mujoco.mj_forward(c.model, c.data)
         difference = (c.data.site_xpos[c.tool] - initial) / 1e-6
         np.testing.assert_allclose(difference, np.array(state["jacobian"])[:, 1], atol=1e-5)
+
+    def test_merged_structure_uses_servo_motion_and_legacy_link(self):
+        self.assertEqual(get_lesson("panda-fk")["id"], "panda-structure")
+        self.assertEqual(get_experiment("panda-fk").id, "panda-structure")
+        c = self.make_controller()
+        target = HOME.copy()
+        target[1] += 0.1
+        initial_position = c.state()["tool_position"]
+        c.configure({"joints": target.tolist(), "gripper_width": 0.04})
+        np.testing.assert_array_equal(c.data.qpos[:7], HOME)
+        c.step()
+        self.assertGreater(np.linalg.norm(c.data.qpos[:7] - HOME), 0)
+        self.assertGreater(np.linalg.norm(c.data.qpos[:7] - target), 0.05)
+        for _ in range(1999):
+            c.step()
+        self.assertLess(np.linalg.norm(c.data.qpos[:7] - target), 0.01)
+        self.assertGreater(np.linalg.norm(np.array(c.state()["tool_position"]) - initial_position), 0.01)
+        self.assertAlmostEqual(c.state()["gripper_width"], 0.04, delta=0.003)
+
+    def test_position_gain_and_damping_can_change_independently(self):
+        c = self.make_controller("joint-control")
+        c.configure({"gain_scale": 0.1, "damping_scale": 0.4})
+        kd = c.model.actuator_biasprm[:7, 2].copy()
+        c.configure({"gain_scale": 0.5, "damping_scale": 0.4})
+        np.testing.assert_array_equal(c.model.actuator_biasprm[:7, 2], kd)
+        kp = c.model.actuator_gainprm[:7, 0].copy()
+        c.configure({"damping_scale": 0.8})
+        np.testing.assert_array_equal(c.model.actuator_gainprm[:7, 0], kp)
+        np.testing.assert_allclose(c.model.actuator_biasprm[:7, 2], kd * 2)
+
+    def test_jacobian_two_second_motion_has_independent_velocity_observation(self):
+        c = self.make_controller("jacobian")
+        c.start_jacobian()
+        c.step()
+        sample = c.state()["velocity_comparison"]
+        self.assertEqual(sample["joint_index"], 1)
+        np.testing.assert_allclose(sample["predicted"], [0.009405, 0, -0.027725], atol=1e-6)
+        self.assertGreater(sample["error_norm"], 1e-10)
+        self.assertLess(sample["error_norm"], 1e-5)
+        for _ in range(2099):
+            c.step()
+        self.assertAlmostEqual(c.data.qpos[1], HOME[1] + 0.1, places=8)
+        self.assertFalse(c.state()["jacobian_running"])
+        np.testing.assert_array_equal(c.data.qvel[:7], np.zeros(7))
+        self.assertIsNotNone(c.state()["velocity_comparison"])
+        c.configure({"velocity": [0, -0.05, 0, 0, 0, 0, 0]})
+        c.start_jacobian()
+        c.step()
+        self.assertLess(c.state()["velocity_comparison"]["joint_velocities"][1], 0)
+
+    def test_jacobian_observation_respects_limits_and_rejects_zero_speed(self):
+        c = self.make_controller("jacobian")
+        q = HOME.copy()
+        q[1] = c.model.jnt_range[1, 1] - 1e-5
+        c.configure({"joints": q.tolist()})
+        c.start_jacobian()
+        c.step()
+        self.assertAlmostEqual(c.state()["velocity_comparison"]["joint_velocities"][1], 0.01, places=7)
+        c.step()
+        self.assertFalse(c.state()["jacobian_running"])
+        c.configure({"velocity": [0] * 7})
+        with self.assertRaisesRegex(ValueError, "非零速度"):
+            c.start_jacobian()
 
     def test_ik_reports_reachable_and_unreachable_targets(self):
         c = self.make_controller("ik")
@@ -137,6 +202,24 @@ class PandaTests(unittest.TestCase):
         falling_error = np.linalg.norm(c.data.qpos[:7] - HOME)
         self.assertLess(held_error, 0.01)
         self.assertGreater(falling_error, 0.1)
+
+    def test_gravity_trials_reset_motion_and_hide_target_marker(self):
+        c = self.make_controller("gravity")
+        self.assertEqual(c.model.geom_rgba[c.model.geom("target_marker").id, 3], 0)
+        c.start_gravity_trial(False)
+        for _ in range(500):
+            c.step()
+        self.assertGreater(c.state()["joint_displacement_rad"], 0.1)
+        np.testing.assert_array_equal(c.data.qfrc_applied[:7], np.zeros(7))
+        c.start_gravity_trial(True)
+        self.assertEqual(c.data.time, 0)
+        np.testing.assert_array_equal(c.data.qpos[:7], HOME)
+        np.testing.assert_array_equal(c.data.qvel, np.zeros(c.model.nv))
+        for _ in range(500):
+            c.step()
+        self.assertLess(c.state()["joint_displacement_rad"], 0.01)
+        self.assertGreater(np.linalg.norm(c.state()["compensation_torque"]), 1)
+        np.testing.assert_array_equal(c.model.opt.gravity, [0, 0, -9.81])
 
     def test_trajectory_updates_reference_and_converges(self):
         c = self.make_controller("trajectory")
@@ -207,6 +290,43 @@ class PandaTests(unittest.TestCase):
             plugin._command()
             self.assertEqual(plugin.command_id, "command-test")
             self.assertAlmostEqual(c.data.time, 0)
+
+    def test_studio_trial_commands_resume_and_reset_expected_state(self):
+        from mujoco.experimental.studio import sim
+        from robotics_lab.studio import PandaStudio
+        with tempfile.TemporaryDirectory() as directory:
+            for mode in ("gravity", "jacobian"):
+                model, data = load_model(get_experiment("panda-" + mode))
+                plugin = PandaStudio(model, data, mode, Path(directory) / mode)
+                path = plugin.bridge.with_suffix(".command.json")
+                actions = ("gravity-release", "gravity-hold") if mode == "gravity" else ("jacobian-run", "jacobian-stop")
+                for index, action in enumerate(actions):
+                    plugin.step_control.set_pause_state(sim.PauseState.NORMAL_PAUSED)
+                    path.write_text(json.dumps({"id": str(index), "action": action}), encoding="utf-8")
+                    plugin._command()
+                    self.assertIsNone(plugin.command_error)
+                    if action != "jacobian-stop":
+                        self.assertEqual(plugin.step_control.get_pause_state(), sim.PauseState.UNPAUSED)
+                    if mode == "gravity":
+                        self.assertEqual(plugin.controller.compensation, action == "gravity-hold")
+                        self.assertEqual(data.time, 0)
+                    else:
+                        self.assertEqual(plugin.controller.jacobian_end is not None, action == "jacobian-run")
+
+    def test_studio_state_replace_permission_failure_retries_without_exiting(self):
+        from robotics_lab.studio import PandaStudio
+        with tempfile.TemporaryDirectory() as directory:
+            model, data = load_model(get_experiment("panda-structure"))
+            plugin = PandaStudio(model, data, "structure", Path(directory) / "bridge")
+            self.assertTrue(plugin._write())
+            previous_write = plugin.last_write
+            plugin.controller.step()
+            with patch("robotics_lab.studio.Path.replace", side_effect=PermissionError):
+                self.assertFalse(plugin._write())
+            self.assertEqual(plugin.last_write, previous_write)
+            self.assertTrue(plugin._write())
+            saved = json.loads(plugin.bridge.with_suffix(".state.json").read_text(encoding="utf-8"))
+            self.assertAlmostEqual(saved["time"], 0.001)
 
 
 if __name__ == "__main__":

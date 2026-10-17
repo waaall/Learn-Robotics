@@ -52,6 +52,13 @@ export type Observation = {
   gravity_torque: number[];
   jacobian: number[][];
   cartesian_velocity: number[];
+  measured_cartesian_velocity?: number[];
+  velocity_comparison?: VelocityComparison | null;
+  jacobian_running?: boolean;
+  joint_displacement_rad?: number;
+  tool_height_change_m?: number;
+  compensation_torque?: number[];
+  compensation: boolean;
   singular_values: number[];
   paused: boolean;
   age_seconds: number;
@@ -67,6 +74,16 @@ export type Observation = {
     position_error_m: number;
   } | null;
 };
+export type VelocityComparison = {
+  time: number;
+  dt: number;
+  joint_index: number;
+  joint_velocities: number[];
+  jacobian: number[][];
+  predicted: number[];
+  measured: number[];
+  error_norm: number;
+};
 export type Sample = {
   time: number;
   value?: number;
@@ -76,6 +93,8 @@ export type Sample = {
   cube_height?: number;
   cube_position?: number[];
   tool_position?: number[];
+  cartesian_velocity?: number[];
+  measured_cartesian_velocity?: number[];
 };
 export type Run = {
   id: string;
@@ -89,6 +108,7 @@ export type Settings = {
   target: number[];
   gripper_width: number;
   gain_scale: number;
+  damping_scale: number;
   compensation: boolean;
   velocity: number[];
   profile: string;
@@ -104,15 +124,22 @@ export const LIMITS = [
   [-0.0175, 3.7525],
   [-2.8973, 2.8973],
 ];
-export const GEOMETRIC = ["structure", "fk", "jacobian", "ik"];
+export const GEOMETRIC = ["jacobian", "ik"];
+export const canonicalLessonId = (id: string) =>
+  id === "panda-fk" ? "panda-structure" : id;
 export function defaults(mode = "structure"): Settings {
   return {
     joints: [...HOME],
     target: [0.45, 0.12, 0.42],
     gripper_width: 0.08,
-    gain_scale: ["joint-control", "trajectory"].includes(mode) ? 0.2 : 1,
+    gain_scale: ["structure", "joint-control", "trajectory"].includes(mode)
+      ? 0.2
+      : 1,
+    damping_scale: ["structure", "joint-control", "trajectory"].includes(mode)
+      ? Math.sqrt(0.2)
+      : 1,
     compensation: true,
-    velocity: Array(7).fill(0),
+    velocity: mode === "jacobian" ? [0, 0.05, 0, 0, 0, 0, 0] : Array(7).fill(0),
     profile: "quintic",
     friction: 1,
   };

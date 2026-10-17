@@ -8,7 +8,7 @@ import mujoco
 import numpy as np
 
 HOME = np.array([0, 0, 0, -1.57079, 0, 1.57079, -0.7853])
-KINEMATIC = {"structure", "fk", "jacobian", "ik"}
+KINEMATIC = {"jacobian", "ik"}
 
 
 def fingerprint(path: Path) -> str:
@@ -54,7 +54,8 @@ def solve_ik(model, seed, target, rotation=None, iterations=160):
 
 class PandaController:
     def __init__(self, model, data, mode):
-        self.model, self.data, self.mode = model, data, mode
+        self.model, self.data = model, data
+        self.mode = "structure" if mode == "fk" else mode
         self.tool = model.site("tool").id
         self.cube = model.body("cube").id
         self.cube_q = model.jnt_qposadr[model.joint("cube_free").id]
@@ -73,18 +74,27 @@ class PandaController:
         self.target = self.data.site_xpos[self.tool].copy()
         self.home_rotation = self.data.site_xmat[self.tool].reshape(3, 3).copy()
         self.width = 0.08
-        self.gain_scale = 0.2 if self.mode in {"joint-control", "trajectory"} else 1.0
+        self.gain_scale = 0.2 if self.mode in {"structure", "joint-control", "trajectory"} else 1.0
+        self.damping_scale = math.sqrt(self.gain_scale)
         self.compensation = True
-        self.velocity = np.zeros(7)
+        self.velocity = np.array([0, 0.05, 0, 0, 0, 0, 0], dtype=float) if self.mode == "jacobian" else np.zeros(7)
+        self.jacobian_end = None
+        self.velocity_comparison = None
+        self.measured_velocity = np.zeros(3)
+        self.initial_q = self.data.qpos[:7].copy()
+        self.initial_tool_height = float(self.data.site_xpos[self.tool, 2])
         self.ik_result = None
         self.motion = None
         self.task = None
-        self.phase = "待操作"
+        self.phase = "待运行单关节运动" if self.mode == "jacobian" else "待操作"
         self.max_cube_height = float(self.data.xpos[self.cube, 2])
         self.profile = "quintic"
         self.friction = 1.0
         self._set_gains()
         self._set_friction()
+        # 目标球仅在位置求解和抓取课有任务含义；其位置由程序指定。
+        self.model.geom_rgba[self.model.geom("target_marker").id, 3] = 0.6 if self.mode in {"ik", "grasp"} else 0
+        self.model.site_rgba[self.model.site("place_goal").id, 3] = 0.35 if self.mode == "grasp" else 0
         self._marker()
 
     def _set_friction(self):
@@ -95,7 +105,7 @@ class PandaController:
         enabled = 0 if self.mode == "gravity" else self.gain_scale
         self.model.actuator_gainprm[:7, 0] = self.kp * enabled
         self.model.actuator_biasprm[:7, 1] = -self.kp * enabled
-        self.model.actuator_biasprm[:7, 2] = -self.kd * math.sqrt(enabled)
+        self.model.actuator_biasprm[:7, 2] = -self.kd * (self.damping_scale if enabled else 0)
 
     def _marker(self):
         self.data.mocap_pos[self.model.body("target").mocapid[0]] = self.target
@@ -121,7 +131,7 @@ class PandaController:
         return result
 
     def configure(self, values):
-        allowed = {"joints", "gripper_width", "target", "gain_scale", "compensation", "velocity", "profile", "friction"}
+        allowed = {"joints", "gripper_width", "target", "gain_scale", "damping_scale", "compensation", "velocity", "profile", "friction"}
         if set(values) - allowed:
             raise ValueError("包含不支持的控制参数")
         # 所有字段先校验，再更改状态，避免非法请求只应用一部分参数。
@@ -130,10 +140,15 @@ class PandaController:
             raise ValueError("关节目标超出模型限位")
         width = self._scalar(values.get("gripper_width", self.width), "夹爪开口")
         scale = self._scalar(values.get("gain_scale", self.gain_scale), "增益倍率")
+        # 旧记录只提供 gain_scale 时保留原来的配对规则；网页显式发送独立阻尼倍率。
+        damping_default = math.sqrt(scale) if "gain_scale" in values and scale > 0 else self.damping_scale
+        damping = self._scalar(values.get("damping_scale", damping_default), "阻尼倍率")
         if not 0 <= width <= 0.08:
             raise ValueError("夹爪开口需在 [0, 0.08] m 内")
         if not 0.05 <= scale <= 1.5:
             raise ValueError("增益倍率需在 [0.05, 1.5] 内")
+        if not 0.05 <= damping <= 2:
+            raise ValueError("阻尼倍率需在 [0.05, 2] 内")
         target = self._vector(values.get("target", self.target), 3, "末端目标")
         if np.any(np.abs(target) > 2):
             raise ValueError("末端目标各坐标需在 [-2, 2] m 内")
@@ -155,16 +170,19 @@ class PandaController:
             self.target_q, self.target = joints.copy(), target.copy()
             self.width = width
         self.gain_scale = scale
+        self.damping_scale = damping
         self.velocity, self.compensation, self.profile = velocity, compensation, profile
         self.friction = friction
         self._set_friction()
         self._set_gains()
-        if self.mode in {"structure", "fk", "jacobian"}:
+        if self.mode == "jacobian":
             self.data.qpos[:7] = joints
             self.data.qpos[7:9] = width / 2
             self.data.qvel[:] = 0
             mujoco.mj_forward(self.model, self.data)
             self.target = self.data.site_xpos[self.tool].copy()
+            self.stop_jacobian()
+            self.velocity_comparison = None
         elif self.mode == "ik":
             solution, self.ik_result = solve_ik(self.model, self.data.qpos, target)
             self.target_q = solution
@@ -173,7 +191,29 @@ class PandaController:
             mujoco.mj_forward(self.model, self.data)
         if not task_active:
             self.reference_q = self.target_q.copy()
+        if self.mode == "gravity":
+            self.phase = "补偿开启 · 观察构型保持" if self.compensation else "补偿关闭 · 观察自重下落"
         self._marker()
+
+    def start_gravity_trial(self, compensation):
+        if self.mode != "gravity":
+            raise ValueError("请在机械臂自重课运行重力对照")
+        self.reset()
+        self.configure({"compensation": compensation})
+
+    def start_jacobian(self):
+        if self.mode != "jacobian":
+            raise ValueError("请在雅可比课运行单关节运动")
+        if np.count_nonzero(self.velocity) != 1:
+            raise ValueError("请为一个关节设置非零速度，其余关节速度保持为零")
+        self.jacobian_end = self.data.time + 2.0
+        self.phase = "单关节运动 · 运行 2 秒"
+
+    def stop_jacobian(self):
+        self.jacobian_end = None
+        self.data.qvel[:] = 0
+        self.measured_velocity[:] = 0
+        self.phase = "运动停止 · 可查看末次运动采样" if self.velocity_comparison else "待运行单关节运动"
 
     def start_motion(self):
         self.motion = {"start": self.data.time, "q0": self.data.qpos[:7].copy(),
@@ -219,11 +259,15 @@ class PandaController:
         model, data = self.model, self.data
         dt = model.opt.timestep
         if self.mode in KINEMATIC:
-            if self.mode == "jacobian":
-                previous = data.qpos[:7].copy()
-                data.qpos[:7] = np.clip(data.qpos[:7] + self.velocity * dt,
-                                       model.jnt_range[:7, 0], model.jnt_range[:7, 1])
-                data.qvel[:7] = (data.qpos[:7] - previous) / dt
+            if self.mode == "jacobian" and self.jacobian_end is not None:
+                if data.time >= self.jacobian_end - dt / 2:
+                    self.stop_jacobian()
+                    self.phase = "2 秒运动完成 · 可更换构型再次运行"
+                else:
+                    self._jacobian_step(dt)
+            else:
+                data.qvel[:] = 0
+                self.measured_velocity[:] = 0
             data.time += dt
             mujoco.mj_forward(model, data)
             return
@@ -247,6 +291,30 @@ class PandaController:
         mujoco.mj_forward(model, data)
         self.max_cube_height = max(self.max_cube_height, float(data.xpos[self.cube, 2]))
 
+    def _jacobian_step(self, dt):
+        model, data = self.model, self.data
+        previous_position = data.site_xpos[self.tool].copy()
+        mujoco.mj_jacSite(model, data, self.jacp, self.jacr, self.tool)
+        interval_jacobian = self.jacp[:, :7].copy()
+        previous = data.qpos[:7].copy()
+        data.qpos[:7] = np.clip(previous + self.velocity * dt,
+                               model.jnt_range[:7, 0], model.jnt_range[:7, 1])
+        data.qvel[:7] = (data.qpos[:7] - previous) / dt
+        mujoco.mj_forward(model, data)
+        self.measured_velocity = (data.site_xpos[self.tool] - previous_position) / dt
+        predicted = interval_jacobian @ data.qvel[:7]
+        if np.any(data.qvel[:7]):
+            self.velocity_comparison = {
+                "time": float(data.time + dt), "dt": dt,
+                "joint_index": int(np.argmax(np.abs(data.qvel[:7]))),
+                "joint_velocities": data.qvel[:7].tolist(),
+                "jacobian": interval_jacobian.tolist(),
+                "predicted": predicted.tolist(), "measured": self.measured_velocity.tolist(),
+                "error_norm": float(np.linalg.norm(predicted - self.measured_velocity))}
+        else:
+            self.stop_jacobian()
+            self.phase = "已到关节限位 · 更换构型或速度方向后运行"
+
     def state(self):
         model, data = self.model, self.data
         mujoco.mj_forward(model, data)
@@ -267,8 +335,14 @@ class PandaController:
                 "gravity_torque": self.gravity_data.qfrc_bias[:7].tolist(),
                 "jacobian": self.jacp[:, :7].tolist(),
                 "cartesian_velocity": (self.jacp[:, :7] @ data.qvel[:7]).tolist(),
+                "measured_cartesian_velocity": self.measured_velocity.tolist(),
+                "velocity_comparison": self.velocity_comparison,
+                "jacobian_running": self.jacobian_end is not None,
+                "joint_displacement_rad": float(np.linalg.norm(data.qpos[:7] - self.initial_q)),
+                "tool_height_change_m": float(data.site_xpos[self.tool, 2] - self.initial_tool_height),
+                "compensation_torque": data.qfrc_applied[:7].tolist(),
                 "singular_values": singular.tolist(), "ik": self.ik_result,
-                "gain_scale": self.gain_scale, "compensation": self.compensation,
+                "gain_scale": self.gain_scale, "damping_scale": self.damping_scale, "compensation": self.compensation,
                 "cube_position": cube_pos.tolist(), "max_cube_height": self.max_cube_height,
                 "contacts": int(data.ncon), "grasp_lifted": self.max_cube_height > 0.32,
                 "place_success": bool(self.task and data.time - self.task["start"] >= 16
@@ -279,12 +353,12 @@ class PandaController:
 def default_settings(mode):
     if mode == "ik":
         return {"target": [0.45, 0.12, 0.42]}
-    if mode in {"joint-control", "trajectory"}:
+    if mode in {"structure", "joint-control", "trajectory"}:
         q = HOME.copy()
         q[0], q[1] = 0.3, 0.2
         return {"joints": q.tolist()}
     if mode == "jacobian":
-        return {"velocity": [0, 0.12, 0, 0, 0, 0, 0]}
+        return {"velocity": [0, 0.05, 0, 0, 0, 0, 0]}
     return {}
 
 
@@ -295,6 +369,8 @@ def simulate_panda(experiment, model, data, duration, settings):
         controller.start_motion()
     elif experiment.mode == "grasp":
         controller.start_grasp()
+    elif experiment.mode == "jacobian":
+        controller.start_jacobian()
     ratio = duration / model.opt.timestep
     if not math.isfinite(duration) or not 0 < duration <= 30 or not math.isclose(ratio, round(ratio)):
         raise ValueError("Panda 实验时长需在 (0, 30] 秒内，且为步长的整数倍")
@@ -309,11 +385,22 @@ def simulate_panda(experiment, model, data, duration, settings):
             samples.append({"time": float(data.time), "value": float(data.qpos[0]),
                             "joints": state["joints"], "tool_position": state["tool_position"],
                             "reference_joints": state["reference_joints"],
+                            "cartesian_velocity": state["cartesian_velocity"],
+                            "measured_cartesian_velocity": state["measured_cartesian_velocity"],
                             "joint_error": error, "cube_height": state["cube_position"][2]})
     state = controller.state()
+    metrics = {"steps": steps, "final_time": float(data.time)}
+    if experiment.mode in {"structure", "joint-control", "trajectory"}:
+        metrics["joint_error_rad"] = samples[-1]["joint_error"]
+    elif experiment.mode == "gravity":
+        metrics.update(joint_displacement_rad=state["joint_displacement_rad"],
+                       tool_height_change_m=state["tool_height_change_m"])
+    elif experiment.mode == "jacobian" and state["velocity_comparison"]:
+        metrics["velocity_error_m_s"] = state["velocity_comparison"]["error_norm"]
+    elif experiment.mode == "ik":
+        metrics["tool_target_error_m"] = float(np.linalg.norm(np.array(state["tool_position"]) - controller.target))
+    elif experiment.mode == "grasp":
+        metrics["max_cube_height_m"] = controller.max_cube_height
     return {"samples": samples, "state": state, "settings": settings if settings is not None else default_settings(experiment.mode),
-            "metrics": {"steps": steps, "final_time": float(data.time),
-                        "joint_error_rad": samples[-1]["joint_error"],
-                        "tool_target_error_m": float(np.linalg.norm(np.array(state["tool_position"]) - controller.target)),
-                        "max_cube_height_m": controller.max_cube_height},
+            "metrics": metrics,
             "model_sha256": fingerprint(experiment.model_path)}
