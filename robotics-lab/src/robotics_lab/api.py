@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field
 
 from . import __version__
 from .catalog import catalog, get_experiment
+from .curriculum import courses, get_lesson
 from .diagnostics import viewer_capability
 from .physics import simulate
 from .sessions import SessionManager
@@ -24,7 +25,15 @@ class ExperimentRequest(BaseModel):
 
 
 class RunRequest(ExperimentRequest):
-    duration: float | None = Field(default=None, gt=0, le=10)
+    duration: float | None = Field(default=None, gt=0, le=30)
+    settings: dict | None = None
+
+
+class SessionCommand(BaseModel):
+    session_id: UUID
+    action: str
+    settings: dict = Field(default_factory=dict)
+    paused: bool = True
 
 
 def create_app(runtime: Path | None = None) -> FastAPI:
@@ -46,10 +55,23 @@ def create_app(runtime: Path | None = None) -> FastAPI:
     def list_experiments():
         return [item.public() for item in catalog().values()]
 
+    @app.get("/api/courses")
+    def list_courses():
+        return courses()
+
+    @app.get("/api/lessons/{identifier}")
+    def lesson(identifier: str):
+        try:
+            result = get_lesson(identifier)
+            result["experiment"] = get_experiment(result["experiment_id"]).public()
+            return result
+        except ValueError as error:
+            raise HTTPException(404, str(error)) from error
+
     @app.post("/api/runs", status_code=201)
     def run(request: RunRequest):
         try:
-            result = simulate(get_experiment(request.experiment_id), request.duration)
+            result = simulate(get_experiment(request.experiment_id), request.duration, request.settings)
         except ValueError as error:
             raise HTTPException(422, str(error)) from error
         identifier = str(uuid4())
@@ -85,6 +107,19 @@ def create_app(runtime: Path | None = None) -> FastAPI:
     @app.get("/api/sessions/current")
     def session():
         return manager.status()
+
+    @app.get("/api/sessions/current/state")
+    def session_state():
+        return manager.state()
+
+    @app.post("/api/sessions/current/commands")
+    def command(request: SessionCommand):
+        try:
+            return manager.command(str(request.session_id), request.model_dump(exclude={"session_id"}))
+        except ValueError as error:
+            raise HTTPException(422, str(error)) from error
+        except RuntimeError as error:
+            raise HTTPException(503, str(error)) from error
 
     dist = PROJECT / "frontend" / "dist"
     if dist.is_dir():

@@ -1,21 +1,26 @@
 # Robotics Lab
 
-机器人交互实验室。整体产品需求见 [整体需求](docs/demand/overall-demand.md)，工程组织见 [框架设计](docs/design/framework.md)。
+机器人交互实验室。以“课程 → 课时 → 实验”组织原理讲解、公式、交互仿真和结果分析。整体产品需求见 [整体需求](docs/demand/overall-demand.md)，课程实现见 [课程与 Panda 适配](docs/design/courses.md)。项目与 `experiments/` 独立，不依赖其硬件、模型、策略、数据或运行环境。
 
 ## 当前电脑快速启动
 
-WSL Ubuntu 环境与前端已安装、构建。在本目录的 Windows PowerShell 中执行 `./run-wsl.ps1`，再用 Windows 浏览器打开 <http://localhost:8000>。网页中选择实验后打开交互仿真，或单独运行数值验证。
+WSL Ubuntu 环境与前端已安装、构建。在本目录的 Windows PowerShell 中执行 `./run-wsl.ps1`，再用 Windows 浏览器打开 <http://localhost:8000>。默认进入 Panda 课程；选择课时后打开交互实验，也可以先调整参数并运行独立数值验证。
 
 新电脑的安装步骤见下文。完整交互仿真使用 Linux 的 Python 环境。
 
 ## 当前能力
 
-- 两个自带实验：重力单摆、落球接触，包含明确初态与实验说明。
-- 本地网页目录、实验说明、独立数值验证、真实结果曲线与 JSON 记录下载。
-- 官方 Studio WebViewer 组件检查与单会话进程管理；组件缺失时明确报告原因。
-- 官方交互仿真与独立数值验证分开：后者始终从预设初态运行，不读取交互窗口中的修改。
+- **Panda 机械臂基础，8 节**：结构与坐标系、正运动学、关节位置控制、重力补偿、雅可比、逆运动学、轨迹跟踪、夹爪接触与抓取。
+- **基础物理实验，2 节**：保留重力单摆和落球接触，重新组织为课时。
+- 每节提供研究问题、前置知识、公式、操作步骤、观测与分析、练习及来源；KaTeX 和字体随前端构建，运行时不依赖 CDN。
+- Panda 网页控件与仿真进程相连，支持关节和夹爪参数、位置 IK、增益和补偿、轨迹与抓取，以及暂停、继续、1 ms 单步和恢复初态。
+- 实时末端位姿、关节力矩、雅可比、IK 残差和任务结果按课时显示；可导出交互观测或下载独立计算记录。
+- 手动标记课时完成状态，保存在当前浏览器；切换课时会结束当前查看器会话。
+- 官方 Studio WebViewer 组件检查与单会话进程管理；组件缺失时可运行独立数值验证。
 
-尚未实现 Menagerie 模型目录、参数编辑、控制器实验、AI 策略接入和完整课程。已完成的实测及待验证内容见 [验证记录](docs/validation/framework.md)。
+Panda 资源固定于官方 Menagerie 提交 `62ab00f2bc44f6f20c1c9b7a13f3fb1dd41a4e35`，保留 Apache-2.0 许可证。模型及网格随源码提供，首次克隆后的安装不需要另外下载模型。控制适配和场景修改见 [课程设计](docs/design/courses.md)，实测见 [课程验证记录](docs/validation/courses.md)。
+
+尚未实现人形机器人课程、任意模型组合、避障规划、AI 策略、完整交互回放和学习账户。交互观测导出保存网页操作与采样，不保证复现官方查看器内的全部编辑；独立验证始终从预设初态计算，不读取当前交互修改。
 
 ## 运行环境
 
@@ -56,7 +61,7 @@ bash run-linux.sh
 
 Windows 浏览器访问 <http://localhost:8000>。如该端口已被其他进程占用，可执行 `bash run-linux.sh 8001`。查看器使用单独的动态端口；访问其他 Linux 主机时，应用端口与查看器端口都需要可达，当前尚未提供统一端口代理。
 
-本机 Ubuntu 的依赖已安装后，也可在 Windows PowerShell 中进入本目录，执行 `./run-wsl.ps1`，或用 `./run-wsl.ps1 -Port 8001 -Distribution Ubuntu` 指定端口和发行版。该脚本直接运行已安装的 Linux 虚拟环境，运行时不依赖 Windows 的 Python。
+本机 Ubuntu 的依赖已安装后，也可在 Windows PowerShell 中进入本目录，执行 `./run-wsl.ps1`，默认使用 WSL 的默认发行版；也可用 `./run-wsl.ps1 -Port 8001 -Distribution Ubuntu-22.04` 指定端口和发行版。发行版名称以 `wsl --list --verbose` 为准。该脚本直接运行已安装的 Linux 虚拟环境，运行时不依赖 Windows 的 Python。
 
 当前电脑已在 `.venv-linux` 安装并验证 Linux 依赖。为完成本次安装而下载的 Linux uv 位于 `.cache/linux-tools/bin/uv`；若尚未将 uv 安装到 Ubuntu 的 PATH，可在上述安装命令中使用这个路径。缓存和虚拟环境均不纳入版本控制，新机器需重新安装。
 
@@ -78,10 +83,13 @@ npm run build --prefix frontend
 
 | 位置 | 职责 |
 | --- | --- |
-| `src/robotics_lab/assets` | 实验目录与模型；模型派生自本仓库已有基础算例 |
+| `src/robotics_lab/assets` | 基础实验目录、Panda 上游模型与课程场景 |
+| `src/robotics_lab/curriculum.py` | 课程、课时讲解与实验引用 |
 | `src/robotics_lab/physics.py` | 初态加载和独立数值计算 |
 | `src/robotics_lab/diagnostics.py` | 安装包组件与资源检查 |
 | `src/robotics_lab/viewer.py` | 官方 WebViewer 适配 |
+| `src/robotics_lab/panda.py` | Panda 专属运动学、控制、观测与接触任务 |
+| `src/robotics_lab/studio.py` | 仿真线程中的课程命令、实时步进和观测发布 |
 | `src/robotics_lab/sessions.py` | 查看器进程生命周期 |
 | `src/robotics_lab/api.py` | 目录、数值运行、记录和会话接口 |
 | `frontend` | 实验选择、说明、仿真窗口与独立结果展示 |

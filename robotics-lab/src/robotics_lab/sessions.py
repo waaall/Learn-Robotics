@@ -1,6 +1,7 @@
 """管理一个官方查看器子进程；数值验证运行不复用该会话状态。"""
 
 from dataclasses import dataclass
+import json
 from pathlib import Path
 import socket
 import subprocess
@@ -31,6 +32,7 @@ class SessionManager:
         self.directory = directory
         self.session: Session | None = None
         self.lock = threading.RLock()
+        self._state_cache: dict | None = None
 
     def start(self, experiment_id: str) -> dict:
         with self.lock:
@@ -47,10 +49,12 @@ class SessionManager:
             identifier = str(uuid4())
             log_path = self.directory / f"{identifier}.log"
             command = [sys.executable, "-m", "robotics_lab.viewer", "--experiment", experiment_id, "--port", str(port)]
+            command += ["--bridge", str(log_path.with_suffix(""))]
             flags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
             with log_path.open("wb") as log:
                 process = subprocess.Popen(command, stdout=log, stderr=log, creationflags=flags)
             self.session = Session(identifier, experiment_id, port, process, time.monotonic(), log_path)
+            self._state_cache = None
             return self.status()
 
     def status(self) -> dict | None:
@@ -91,8 +95,51 @@ class SessionManager:
                 session.process.kill()
                 session.process.wait(timeout=3)
 
+    def state(self) -> dict | None:
+        with self.lock:
+            session = self.session
+            if not session or session.process.poll() is not None:
+                return None
+            path = session.log_path.with_suffix(".state.json")
+            try:
+                state = json.loads(path.read_text(encoding="utf-8"))
+                self._state_cache = state.copy()
+            except (OSError, json.JSONDecodeError):
+                # WSL 挂载目录在替换文件时可能暂时不可读，保留最近一次有效观测及其时间。
+                if self._state_cache is None:
+                    return None
+                state = self._state_cache.copy()
+            state.update(session_id=session.id, experiment_id=session.experiment_id,
+                         age_seconds=max(0, time.time() - state["written_at"]))
+            return state
+
+    def command(self, identifier: str, request: dict) -> dict:
+        with self.lock:
+            session = self.session
+            if not session or session.id != identifier or session.process.poll() is not None:
+                raise ValueError("课程会话已改变，请重新打开实验")
+            if get_experiment(session.experiment_id).adapter != "panda":
+                raise ValueError("该实验使用官方窗口中的操作控件")
+            identifier = str(uuid4())
+            request = {**request, "id": identifier}
+            path = session.log_path.with_suffix(".command.json")
+            temporary = path.with_suffix(".tmp")
+            temporary.write_text(json.dumps(request, allow_nan=False), encoding="utf-8")
+            temporary.replace(path)
+            deadline = time.monotonic() + 8
+            while time.monotonic() < deadline:
+                state = self.state()
+                if state and state.get("command_id") == identifier:
+                    if state.get("command_error"):
+                        raise ValueError(state["command_error"])
+                    return state
+                if session.process.poll() is not None:
+                    raise RuntimeError("仿真进程已退出，请检查会话日志")
+                time.sleep(0.02)
+            raise RuntimeError("课程操作等待超时，请检查仿真进程")
     def stop(self) -> None:
         with self.lock:
             if self.session:
                 self._terminate(self.session)
                 self.session = None
+                self._state_cache = None

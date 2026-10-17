@@ -1,424 +1,648 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
+import "katex/dist/katex.min.css";
 import "./style.css";
-
-type Experiment = {
-  id: string;
-  title: string;
-  topic: string;
-  robot: string;
-  summary: string;
-  explanation: string;
-  observations: string[];
-  observable_name: string;
-  observable_unit: string;
-  duration: number;
-};
-type Session = {
-  id: string;
-  experiment_id: string;
-  port: number;
-  status: string;
-  error: string | null;
-};
-type System = {
-  version: string;
-  viewer: {
-    available: boolean;
-    reason: string;
-    platform: string;
-    mujoco: string;
-  };
-  session: Session | null;
-};
-type Run = {
-  id: string;
-  duration: number;
-  metrics: Record<string, number>;
-  samples: { time: number; value: number }[];
-};
+import { Chart, Controls, Readings, Theory } from "./widgets";
+import {
+  defaults,
+  GEOMETRIC,
+  HOME,
+  type Course,
+  type Observation,
+  type Run,
+  type Session,
+  type System,
+} from "./types";
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const response = await fetch(path, options);
   if (!response.ok) {
-    const error = await response.json().catch(() => null);
+    const body = await response.json().catch(() => null);
     throw new Error(
-      typeof error?.detail === "string"
-        ? error.detail
+      typeof body?.detail === "string"
+        ? body.detail
         : `请求失败（${response.status}）`,
     );
   }
   return response.status === 204 ? (undefined as T) : response.json();
 }
-
-function SceneSketch({ id }: { id: string }) {
-  return (
-    <svg viewBox="0 0 100 72" aria-hidden="true">
-      <path
-        d="M10 60H90M18 57V63M36 57V63M54 57V63M72 57V63"
-        className="sketch-ground"
-      />
-      {id === "pendulum" ? (
-        <>
-          <path d="M48 12L63 51" className="sketch-link" />
-          <circle cx="48" cy="12" r="4" />
-          <path d="M48 20V49M48 40Q53 40 58 37" className="sketch-guide" />
-        </>
-      ) : (
-        <>
-          <circle cx="50" cy="25" r="11" />
-          <path d="M50 42V52M46 48L50 53L54 48" className="sketch-guide" />
-        </>
-      )}
-    </svg>
-  );
-}
-
-function Trace({ run, unit }: { run: Run; unit: string }) {
-  const values = run.samples.map((sample) => sample.value);
-  const lo = Math.min(...values),
-    hi = Math.max(...values),
-    span = Math.max(hi - lo, 0.001);
-  const end = run.samples.at(-1)?.time || 1;
-  const path = run.samples
-    .map(
-      (sample, index) =>
-        `${index ? "L" : "M"}${(24 + (sample.time / end) * 650).toFixed(2)},${(148 - ((sample.value - lo) / span) * 115).toFixed(2)}`,
-    )
-    .join(" ");
-  return (
-    <svg
-      viewBox="0 0 700 185"
-      role="img"
-      aria-label={`独立数值验证曲线，单位 ${unit}`}
-    >
-      {[33, 90, 148].map((y) => (
-        <path key={y} d={`M24 ${y}H675`} className="chart-grid" />
-      ))}
-      <path d={path} className="trace" />
-      <text x="24" y="177">
-        0 s
-      </text>
-      <text x="625" y="177">
-        {end.toFixed(2)} s
-      </text>
-      <text x="26" y="21">
-        {hi.toPrecision(4)} {unit}
-      </text>
-    </svg>
-  );
-}
+const post = (body: unknown): RequestInit => ({
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify(body),
+});
+const LABELS: Record<string, string> = {
+  steps: "积分步数",
+  final_time: "时长 / s",
+  final_speed: "末态速度范数",
+  max_energy_drift_J: "最大能量变化 / J",
+  mean_support_N: "末段支撑 / N",
+  max_penetration_m: "最大穿透 / m",
+  joint_error_rad: "参考跟踪误差 / rad",
+  tool_target_error_m: "末端目标误差 / m",
+  max_cube_height_m: "方块最高高度 / m",
+};
 
 function App() {
-  const [experiments, setExperiments] = useState<Experiment[]>([]);
-  const [selectedId, setSelectedId] = useState("pendulum");
-  const [system, setSystem] = useState<System | null>(null);
-  const [run, setRun] = useState<Run | null>(null);
-  const [busy, setBusy] = useState("");
-  const [error, setError] = useState("");
+  const [courses, setCourses] = useState<Course[]>([]),
+    [selected, setSelected] = useState(
+      location.hash.slice(1) || "panda-structure",
+    );
+  const [system, setSystem] = useState<System | null>(null),
+    [state, setState] = useState<Observation | null>(null);
+  const [settings, setSettings] = useState(() => defaults()),
+    [history, setHistory] = useState<Observation[]>([]);
+  const [run, setRun] = useState<Run | null>(null),
+    [busy, setBusy] = useState(""),
+    [error, setError] = useState("");
+  const [mobileView, setMobileView] = useState("theory");
+  const [joint, setJoint] = useState(0),
+    [completed, setCompleted] = useState<string[]>(() => {
+      try {
+        const saved = JSON.parse(
+          localStorage.getItem("robotics-lab.completed") || "[]",
+        );
+        return Array.isArray(saved) ? saved : [];
+      } catch {
+        return [];
+      }
+    });
+  const selection = useRef(selected),
+    actions = useRef<unknown[]>([]);
+  selection.current = selected;
+  const course =
+    courses.find((c) => c.lessons.some((l) => l.id === selected)) || courses[0];
+  const lesson =
+    course?.lessons.find((l) => l.id === selected) || course?.lessons[0];
+  const index = course?.lessons.findIndex((l) => l.id === lesson?.id) ?? 0;
+  const session = system?.session,
+    mode = lesson?.mode || "structure",
+    panda = lesson?.adapter === "panda";
+  const ready =
+    session?.status === "ready" &&
+    session.experiment_id === lesson?.experiment_id;
+  const viewerUrl = session
+    ? `${location.protocol}//${location.hostname}:${session.port}/`
+    : undefined;
+  const latest = state || run?.state;
+
   useEffect(() => {
     const controller = new AbortController();
     Promise.all([
-      request<Experiment[]>("/api/catalog", { signal: controller.signal }),
+      request<Course[]>("/api/courses", { signal: controller.signal }),
       request<System>("/api/system", { signal: controller.signal }),
     ])
-      .then(([items, state]) => {
-        setExperiments(items);
-        setSystem(state);
-        if (state.session) setSelectedId(state.session.experiment_id);
+      .then(([items, info]) => {
+        setCourses(items);
+        setSystem(info);
+        if (info.session) {
+          setSelected(info.session.experiment_id);
+          setSettings(
+            defaults(
+              items
+                .flatMap((c) => c.lessons)
+                .find((l) => l.experiment_id === info.session!.experiment_id)
+                ?.mode,
+            ),
+          );
+        } else if (
+          !items.some((c) => c.lessons.some((l) => l.id === selection.current))
+        )
+          setSelected(items[0].lessons[0].id);
       })
-      .catch((reason) => {
-        if (!controller.signal.aborted) setError(String(reason));
+      .catch((e) => {
+        if (!controller.signal.aborted) setError(String(e));
       });
-    return () => controller.abort();
-  }, []);
-  useEffect(() => {
-    const controller = new AbortController();
-    const interval = window.setInterval(() => {
-      request<System>("/api/system", { signal: controller.signal })
-        .then(setSystem)
-        .catch(() => {});
-    }, 2000);
+    const timer = setInterval(
+      () =>
+        request<System>("/api/system", { signal: controller.signal })
+          .then(setSystem)
+          .catch(() => {}),
+      2000,
+    );
     return () => {
       controller.abort();
-      window.clearInterval(interval);
+      clearInterval(timer);
     };
   }, []);
-  const selected = experiments.find((item) => item.id === selectedId);
-  const session = system?.session;
-  const viewerUrl = session
-    ? `${window.location.protocol}//${window.location.hostname}:${session.port}/`
-    : undefined;
-  const active = session?.status === "ready" || session?.status === "starting";
-
+  useEffect(() => {
+    if (!session || session.experiment_id !== selected || !panda) return;
+    const controller = new AbortController();
+    const read = () =>
+      request<Observation | null>("/api/sessions/current/state", {
+        signal: controller.signal,
+      })
+        .then((s) => {
+          if (
+            controller.signal.aborted ||
+            !s ||
+            s.session_id !== session.id ||
+            selection.current !== selected
+          )
+            return;
+          setState(s);
+          setHistory((prev) =>
+            s.time < (prev.at(-1)?.time ?? 0) ? [s] : [...prev, s].slice(-400),
+          );
+        })
+        .catch(() => {});
+    read();
+    const timer = setInterval(read, 200);
+    return () => {
+      controller.abort();
+      clearInterval(timer);
+    };
+  }, [session?.id, selected, panda]);
+  useEffect(() => {
+    historyReplace(selected);
+  }, [selected]);
+  useEffect(() => {
+    const onHash = () => {
+      const id = location.hash.slice(1);
+      if (
+        id &&
+        id !== selection.current &&
+        courses.some((c) => c.lessons.some((l) => l.id === id))
+      )
+        void changeLesson(id);
+    };
+    window.addEventListener("hashchange", onHash);
+    return () => window.removeEventListener("hashchange", onHash);
+  });
+  function historyReplace(id: string) {
+    window.history.replaceState(null, "", `#${id}`);
+  }
   async function perform(name: string, action: () => Promise<void>) {
     setBusy(name);
     setError("");
     try {
       await action();
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
     } finally {
       setBusy("");
     }
   }
-  function startViewer() {
-    void perform("viewer", async () => {
-      const created = await request<Session>("/api/sessions", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ experiment_id: selectedId }),
-      });
-      setSystem((previous) =>
-        previous ? { ...previous, session: created } : previous,
+  async function changeLesson(id: string) {
+    if (id === selected || busy) return;
+    await perform("switch", async () => {
+      if (session) await request("/api/sessions/current", { method: "DELETE" });
+      setSystem((prev) => (prev ? { ...prev, session: null } : prev));
+      setSelected(id);
+      setSettings(
+        defaults(
+          courses.flatMap((c) => c.lessons).find((l) => l.id === id)?.mode,
+        ),
       );
-    });
-  }
-  function stopViewer() {
-    void perform("stop", async () => {
-      await request<void>("/api/sessions/current", { method: "DELETE" });
-      setSystem((previous) =>
-        previous ? { ...previous, session: null } : previous,
-      );
-    });
-  }
-  function simulate() {
-    void perform("run", async () => {
+      setState(null);
+      setHistory([]);
       setRun(null);
-      setRun(
-        await request<Run>("/api/runs", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ experiment_id: selectedId }),
-        }),
-      );
+      setJoint(0);
+      actions.current = [];
+      window.scrollTo(0, 0);
     });
   }
-
+  async function command(action: string, extra = {}, id = session?.id) {
+    if (!id) throw new Error("请先打开交互实验");
+    const result = await request<Observation>(
+      "/api/sessions/current/commands",
+      post({ session_id: id, action, settings, ...extra }),
+    );
+    actions.current.push({
+      action,
+      time: result.time,
+      settings: { ...settings },
+      ...extra,
+    });
+    setState(result);
+    return result;
+  }
+  async function openExperiment() {
+    await perform("open", async () => {
+      const created = await request<Session>(
+        "/api/sessions",
+        post({ experiment_id: lesson!.experiment_id }),
+      );
+      setSystem((prev) => (prev ? { ...prev, session: created } : prev));
+      if (!panda) return;
+      for (let i = 0; i < 100; i++) {
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        const info = await request<System>("/api/system");
+        setSystem(info);
+        if (info.session?.id !== created.id) throw new Error("实验会话已改变");
+        if (info.session.status === "failed")
+          throw new Error(info.session.error || "仿真启动失败");
+        if (info.session.status === "ready") {
+          await command("configure", {}, created.id);
+          return;
+        }
+      }
+      throw new Error("仿真启动超时");
+    });
+  }
+  async function control(action: string) {
+    await perform(action, async () => {
+      if (action === "grasp") await command("configure");
+      await command(
+        action,
+        action === "pause" ? { paused: !state?.paused } : {},
+      );
+      if (action === "reset") {
+        setSettings(defaults(mode));
+        setHistory([]);
+      }
+    });
+  }
+  function toggleCompleted() {
+    const next = completed.includes(selected)
+      ? completed.filter((id) => id !== selected)
+      : [...completed, selected];
+    setCompleted(next);
+    try {
+      localStorage.setItem("robotics-lab.completed", JSON.stringify(next));
+    } catch {
+      /* 学习页面仍可使用 */
+    }
+  }
+  function exportLive() {
+    const blob = new Blob(
+      [
+        JSON.stringify(
+          {
+            lesson_id: selected,
+            session_id: session?.id,
+            actions: actions.current,
+            observations: history,
+          },
+          null,
+          2,
+        ),
+      ],
+      { type: "application/json" },
+    );
+    const url = URL.createObjectURL(blob),
+      anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `${selected}-observations.json`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  }
   return (
     <div className="app">
       <header className="topbar">
-        <a className="brand" href="/">
+        <a
+          className="brand"
+          href="#panda-structure"
+          onClick={(e) => {
+            e.preventDefault();
+            void changeLesson("panda-structure");
+          }}
+        >
           ROBOTICS<span>LAB</span>
         </a>
         <span className="product-name">机器人交互实验室</span>
         <span className="runtime">
           {system
             ? `${system.viewer.platform} · MuJoCo ${system.viewer.mujoco}`
-            : "正在检查环境"}
+            : "检查运行环境…"}
         </span>
       </header>
-      <main className="workspace">
-        <aside className="catalog">
-          <p className="eyebrow">实验目录</p>
+      <div className="layout">
+        <aside className="sidebar">
+          <p className="eyebrow">交互课程</p>
           <h1>
-            从物理现象
+            在实验中理解
             <br />
-            研究机器人。
+            机器人的运动。
           </h1>
-          <p className="muted">选择实验，观察运动、受力与数值结果。</p>
-          <nav aria-label="实验选择">
-            {experiments.map((item) => (
+          <label className="course-label" htmlFor="course">
+            课程目录
+          </label>
+          <select
+            id="course"
+            aria-label="选择课程"
+            value={course?.id || ""}
+            disabled={!!busy}
+            onChange={(e) =>
+              void changeLesson(
+                courses.find((c) => c.id === e.target.value)!.lessons[0].id,
+              )
+            }
+          >
+            {courses.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.title}
+              </option>
+            ))}
+          </select>
+          <p className="course-subtitle">{course?.subtitle}</p>
+          <nav aria-label="课时目录">
+            {course?.lessons.map((item, n) => (
               <button
                 key={item.id}
-                className={`experiment-card ${item.id === selectedId ? "selected" : ""}`}
-                disabled={active || !!busy}
-                aria-pressed={item.id === selectedId}
-                onClick={() => {
-                  setSelectedId(item.id);
-                  setRun(null);
-                  setError("");
-                }}
+                className={`lesson-link ${item.id === selected ? "selected" : ""}`}
+                disabled={!!busy}
+                aria-current={item.id === selected ? "step" : undefined}
+                onClick={() => void changeLesson(item.id)}
               >
-                <SceneSketch id={item.id} />
-                <span>
-                  <small>{item.topic}</small>
-                  <strong>{item.title}</strong>
-                  <span>{item.robot}</span>
+                <span className="lesson-number">
+                  {completed.includes(item.id)
+                    ? "✓"
+                    : String(n + 1).padStart(2, "0")}
                 </span>
+                <span>{item.title}</span>
               </button>
             ))}
           </nav>
-          <div className="catalog-note">
-            <strong>首版框架</strong>
-            <p>
-              已接入两项基础实验。机器人模型库与控制、AI 策略实验将在后续适配。
-            </p>
-            {active ? <p>结束当前交互会话后可切换实验。</p> : null}
+          <div className="course-progress">
+            <span>已标记完成</span>
+            <strong>
+              {course?.lessons.filter((l) => completed.includes(l.id)).length ||
+                0}{" "}
+              / {course?.lessons.length || 0}
+            </strong>
+          </div>
+          <p className="sidebar-note">
+            按课时学习，也可以直接进入感兴趣的实验。切换课时会结束当前交互会话。
+          </p>
+          <div className="sidebar-footer">
+            原理 · 操作 · 观测 · 分析
+            <br />
+            Robotics Lab v{system?.version || "0.2.0"}
           </div>
         </aside>
-        <section className="experiment" aria-label="实验工作区">
-          <div className="experiment-heading">
-            <div>
-              <p className="eyebrow">{selected?.topic || "加载实验"}</p>
-              <h2>{selected?.title || "正在载入目录"}</h2>
-              <p>{selected?.summary}</p>
-            </div>
-            <span className="tag">{selected?.duration ?? "—"} s 默认时长</span>
+        <main className="course-main">
+          <div className="breadcrumb">
+            {course?.title}
+            <span>/</span>第 {index + 1} 课
+            <span className="level">{course?.level}</span>
           </div>
-          {error ? (
+          <div className="lesson-heading">
+            <div>
+              <p className="eyebrow">
+                LESSON {String(index + 1).padStart(2, "0")}
+              </p>
+              <h2>{lesson?.title || "正在加载课程"}</h2>
+              <p>{lesson?.summary}</p>
+            </div>
+            <button
+              className={`button completion ${completed.includes(selected) ? "done" : ""}`}
+              onClick={toggleCompleted}
+            >
+              {completed.includes(selected) ? "✓ 已标记完成" : "标记本课完成"}
+            </button>
+          </div>
+          {error && (
             <div className="error" role="alert">
               {error}
             </div>
-          ) : null}
-          <div className="viewer-toolbar">
-            <span>
-              <i
-                className={
-                  session?.status === "ready" ? "indicator ready" : "indicator"
-                }
-              />
-              {session?.status === "ready"
-                ? "交互会话已就绪"
-                : session?.status === "starting"
-                  ? "正在启动交互会话"
-                  : "交互仿真"}
-            </span>
-            <div>
-              {session?.status === "ready" ? (
-                <a
-                  className="viewer-link"
-                  href={viewerUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  独立窗口 ↗
-                </a>
-              ) : null}
-              {session ? (
-                <button
-                  className="button"
-                  disabled={!!busy}
-                  onClick={stopViewer}
-                >
-                  结束会话
-                </button>
-              ) : (
-                <button
-                  className="button primary"
-                  disabled={!system?.viewer.available || !!busy || !selected}
-                  onClick={startViewer}
-                >
-                  打开交互仿真
-                </button>
-              )}
-            </div>
+          )}
+          <div className="view-switch" aria-label="学习视图">
+            <button
+              className="button"
+              aria-pressed={mobileView === "theory"}
+              onClick={() => setMobileView("theory")}
+            >
+              原理讲解
+            </button>
+            <button
+              className="button"
+              aria-pressed={mobileView === "lab"}
+              onClick={() => setMobileView("lab")}
+            >
+              交互实验
+            </button>
           </div>
-          <div className="viewer-surface">
-            {session?.status === "ready" ? (
-              <iframe
-                title="官方交互仿真窗口"
-                src={viewerUrl}
-                allow="fullscreen"
-              />
-            ) : (
-              <div className="viewer-placeholder">
-                <span className="axis-mark" aria-hidden="true">
-                  ↗
-                </span>
-                <h3>
-                  {session?.status === "starting"
-                    ? "正在准备仿真窗口"
-                    : "在三维场景中操作实验"}
-                </h3>
-                <p>
-                  {session?.error ||
-                    (system?.viewer.available
-                      ? "打开后可在窗口中暂停、单步、调整关节及恢复初态。"
-                      : system?.viewer.reason || "正在检查交互仿真组件。")}
-                </p>
-                <span className="subtle">
-                  下方数值验证可独立运行，并保存结果。
-                </span>
-              </div>
-            )}
-          </div>
-          <section className="results">
-            <div className="section-heading">
-              <div>
-                <p className="eyebrow">独立数值验证</p>
-                <h3>{selected?.observable_name || "观测量"}</h3>
-              </div>
-              <button
-                className="button"
-                disabled={!!busy || !selected}
-                onClick={simulate}
-              >
-                {busy === "run" ? "正在计算…" : "运行数值验证"}
-              </button>
-            </div>
-            <p className="muted">
-              从预设初态重新计算，不读取上方交互会话的修改。
-            </p>
-            {run && selected ? (
-              <>
-                <Trace run={run} unit={selected.observable_unit} />
-                <div className="metrics">
-                  {Object.entries(run.metrics).map(([key, value]) => (
-                    <div key={key}>
-                      <span>
-                        {(
-                          {
-                            steps: "积分步数",
-                            final_time: "仿真时间 / s",
-                            final_speed: "末态广义速度范数",
-                            max_energy_drift_J: "最大能量变化 / J",
-                            mean_support_N: "末段平均支撑 / N",
-                            max_penetration_m: "最大穿透 / m",
-                          } as Record<string, string>
-                        )[key] || key}
-                      </span>
-                      <strong>
-                        {Number.isInteger(value) ? value : value.toPrecision(5)}
-                      </strong>
-                    </div>
-                  ))}
+          <div className="learning-grid" data-mobile-view={mobileView}>
+            {lesson && <Theory lesson={lesson} />}
+            <section className="lab" aria-label="交互实验">
+              <div className="panel viewer-panel">
+                <div className="panel-heading">
+                  <div>
+                    <span className={`indicator ${ready ? "ready" : ""}`} />
+                    <strong>
+                      {ready
+                        ? "交互实验已就绪"
+                        : session?.status === "starting"
+                          ? "正在加载仿真"
+                          : "交互实验"}
+                    </strong>
+                  </div>
+                  <div className="toolbar">
+                    {ready && (
+                      <a href={viewerUrl} target="_blank" rel="noreferrer">
+                        独立窗口 ↗
+                      </a>
+                    )}
+                    {session ? (
+                      <button
+                        className="button small"
+                        disabled={!!busy}
+                        onClick={() =>
+                          void perform("stop", async () => {
+                            await request("/api/sessions/current", {
+                              method: "DELETE",
+                            });
+                            setSystem((prev) =>
+                              prev ? { ...prev, session: null } : prev,
+                            );
+                            setState(null);
+                          })
+                        }
+                      >
+                        结束实验
+                      </button>
+                    ) : (
+                      <button
+                        className="button primary small"
+                        disabled={
+                          !!busy || !system?.viewer.available || !lesson
+                        }
+                        onClick={() => void openExperiment()}
+                      >
+                        {busy === "open" ? "正在启动…" : "打开交互实验"}
+                      </button>
+                    )}
+                  </div>
                 </div>
-                <a
-                  className="download"
-                  href={`/api/runs/${run.id}`}
-                  download={`${selectedId}-${run.id}.json`}
-                >
-                  下载本次实验记录 ↗
-                </a>
-              </>
-            ) : (
-              <div className="empty-trace">
-                运行后显示真实计算曲线、指标与可下载记录。
+                <div className="viewer-surface">
+                  {ready ? (
+                    <iframe
+                      title="官方交互仿真窗口"
+                      src={viewerUrl}
+                      allow="fullscreen"
+                    />
+                  ) : (
+                    <div className="viewer-placeholder">
+                      <div className="axis-graphic">
+                        <span>X</span>
+                        <span>Y</span>
+                        <span>Z</span>
+                      </div>
+                      <h3>
+                        {panda
+                          ? "Panda 机械臂实验工作台"
+                          : "基础物理实验工作台"}
+                      </h3>
+                      <p>
+                        {session?.error ||
+                          (system?.viewer.available
+                            ? "打开三维场景，将本课原理与实际观测对应。"
+                            : system?.viewer.reason || "正在检查运行组件…")}
+                      </p>
+                    </div>
+                  )}
+                </div>
+                <p className="viewer-caption">
+                  {panda
+                    ? GEOMETRIC.includes(mode)
+                      ? "几何实验 · 直接更新构型与运动学观测"
+                      : "动力学实验 · 执行器、重力与接触共同决定运动"
+                    : "使用官方窗口中的暂停、步进和初态恢复控件"}
+                </p>
               </div>
-            )}
-          </section>
-        </section>
-        <aside className="lesson">
-          <p className="eyebrow">实验说明</p>
-          <h3>观察什么</h3>
-          <p className="explanation">{selected?.explanation}</p>
-          <ol>
-            {selected?.observations.map((item) => (
-              <li key={item}>{item}</li>
-            ))}
-          </ol>
-          <div className="lesson-note">
-            <h4>状态与运动</h4>
-            <p>
-              直接编辑关节位置会改变系统状态。执行器输入和外力则通过动力学影响后续运动。
-            </p>
+              {panda && (
+                <Controls
+                  mode={mode}
+                  settings={settings}
+                  set={setSettings}
+                  joint={joint}
+                  setJoint={setJoint}
+                  ready={ready}
+                  busy={!!busy}
+                  paused={!!state?.paused}
+                  act={(action) => void control(action)}
+                />
+              )}
+              {panda && latest && (
+                <Readings state={latest} mode={mode} live={!!state} />
+              )}
+              {panda && (
+                <div className="panel live-chart">
+                  <div className="panel-heading">
+                    <h3>交互过程记录</h3>
+                    <div className="toolbar">
+                      {mode !== "grasp" && (
+                        <select
+                          aria-label="曲线关节"
+                          value={joint}
+                          onChange={(e) => setJoint(+e.target.value)}
+                        >
+                          {HOME.map((_, i) => (
+                            <option key={i} value={i}>
+                              关节 {i + 1}
+                            </option>
+                          ))}
+                        </select>
+                      )}
+                      <button
+                        className="text-button"
+                        disabled={!history.length}
+                        onClick={exportLive}
+                      >
+                        导出观测 ↗
+                      </button>
+                    </div>
+                  </div>
+                  <Chart
+                    samples={history.map((s) => ({
+                      ...s,
+                      cube_height: s.cube_position[2],
+                    }))}
+                    joint={joint}
+                    mode={mode}
+                  />
+                  <p className="panel-note">
+                    记录当前交互会话最近的观测；暂停与恢复初态可用于对照。
+                  </p>
+                </div>
+              )}
+              <div className="panel independent">
+                <div className="panel-heading">
+                  <div>
+                    <p className="section-label">独立数值验证</p>
+                    <h3>从预设初态重新计算</h3>
+                  </div>
+                  <button
+                    className="button"
+                    disabled={!!busy || !lesson}
+                    onClick={() =>
+                      void perform("run", async () => {
+                        setRun(null);
+                        setRun(
+                          await request<Run>(
+                            "/api/runs",
+                            post({
+                              experiment_id: lesson!.experiment_id,
+                              settings: panda ? settings : null,
+                            }),
+                          ),
+                        );
+                      })
+                    }
+                  >
+                    {busy === "run" ? "正在计算…" : "运行独立验证"}
+                  </button>
+                </div>
+                <p className="panel-note">
+                  使用本页参数和本课预设初态，单独计算一次；结果不读取或改变上方交互会话。
+                </p>
+                {run && (
+                  <>
+                    <Chart
+                      samples={run.samples}
+                      joint={joint}
+                      mode={mode}
+                      unit={run.experiment.observable_unit}
+                    />
+                    <div className="metrics">
+                      {Object.entries(run.metrics).map(([key, value]) => (
+                        <div key={key}>
+                          <span>{LABELS[key] || key}</span>
+                          <strong>
+                            {Number.isInteger(value)
+                              ? value
+                              : value.toPrecision(5)}
+                          </strong>
+                        </div>
+                      ))}
+                    </div>
+                    <a
+                      className="download"
+                      href={`/api/runs/${run.id}`}
+                      download={`${selected}-${run.id}.json`}
+                    >
+                      下载本次数值记录 ↗
+                    </a>
+                  </>
+                )}
+              </div>
+            </section>
           </div>
-          <div className="lesson-note">
-            <h4>结果的适用条件</h4>
-            <p>
-              数值结果对应预设模型、初态和步长。修改条件后，需要重新运行与比较。
-            </p>
-          </div>
-          <p className="version">
-            Robotics Lab v{system?.version || "0.1.0"}
-            <br />
-            本地实验工作台
-          </p>
-        </aside>
-      </main>
+          <footer className="lesson-footer">
+            <button
+              className="button"
+              disabled={index <= 0 || !!busy}
+              onClick={() => void changeLesson(course!.lessons[index - 1].id)}
+            >
+              ← 上一课
+            </button>
+            <span>
+              第 {index + 1} / {course?.lessons.length || 0} 课
+            </span>
+            <button
+              className="button"
+              disabled={
+                !course || index === course.lessons.length - 1 || !!busy
+              }
+              onClick={() => void changeLesson(course!.lessons[index + 1].id)}
+            >
+              下一课 →
+            </button>
+          </footer>
+        </main>
+      </div>
     </div>
   );
 }
-
 createRoot(document.getElementById("root")!).render(<App />);

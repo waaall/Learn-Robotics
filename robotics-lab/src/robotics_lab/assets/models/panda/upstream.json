@@ -1,0 +1,8 @@
+{
+  "repository": "https://github.com/google-deepmind/mujoco_menagerie",
+  "commit": "62ab00f2bc44f6f20c1c9b7a13f3fb1dd41a4e35",
+  "directory": "franka_emika_panda",
+  "license": "Apache-2.0",
+  "files": "panda.xml and assets/ copied unchanged; LICENSE and upstream README retained",
+  "adaptation": "../panda_course.xml adds the course scene; Python adds a tool site and experiment keyframe. Gravity lesson disables arm servos; other dynamic lessons use configurable position servos."
+}

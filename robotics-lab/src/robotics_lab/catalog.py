@@ -22,6 +22,9 @@ class Experiment:
     observable_unit: str
     explanation: str
     observations: tuple[str, ...]
+    adapter: str = "basic"
+    mode: str = "physics"
+    initial_ctrl: tuple[float, ...] = ()
 
     @property
     def model_path(self) -> Path:
@@ -40,9 +43,21 @@ def catalog() -> dict[str, Experiment]:
     with (ASSETS / "catalog.toml").open("rb") as stream:
         entries = tomllib.load(stream)["experiments"]
     result = {}
+    from .curriculum import PANDA_LESSONS
+    for lesson in PANDA_LESSONS:
+        entries.append({"id": lesson["id"], "title": lesson["title"], "topic": "Panda 机械臂基础",
+                        "robot": "Franka Emika Panda", "summary": lesson["summary"],
+                        "model": "panda_course.xml", "qpos": [0, 0, 0, -1.57079, 0, 1.57079, -0.7853, 0.04, 0.04,
+                                                                  0.45, 0, 0.225, 1, 0, 0, 0],
+                        "initial_ctrl": [0, 0, 0, -1.57079, 0, 1.57079, -0.7853, 255],
+                        "duration": lesson["duration"], "observable_index": 0,
+                        "observable_name": "关节 1 角度", "observable_unit": "rad",
+                        "explanation": lesson["summary"], "observations": lesson["observations"],
+                        "adapter": "panda", "mode": lesson["mode"]})
     for entry in entries:
         entry["qpos"] = tuple(entry["qpos"])
         entry["observations"] = tuple(entry["observations"])
+        entry["initial_ctrl"] = tuple(entry.get("initial_ctrl", ()))
         item = Experiment(**entry)
         if item.id in result or not item.model_path.is_file():
             raise ValueError(f"重复实验标识或模型缺失：{item.id}")

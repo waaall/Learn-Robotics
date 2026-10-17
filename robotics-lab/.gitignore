@@ -2,3 +2,7 @@
 .venv-linux/
 .cache/
 frontend/dist/
+.playwright-cli/
+output/playwright/
+# 机器人视觉与碰撞网格是模型源资产，覆盖根目录对编译目标 *.obj 的忽略规则。
+!src/robotics_lab/assets/models/panda/assets/*.obj

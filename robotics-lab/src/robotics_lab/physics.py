@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 import hashlib
 import math
 import platform
+from pathlib import Path
 
 import mujoco
 import numpy as np
@@ -16,7 +17,18 @@ def load_model(experiment: Experiment):
     if mujoco.__version__ != MUJOCO_VERSION or mujoco.mj_versionString() != MUJOCO_VERSION:
         raise RuntimeError(f"物理实验要求 MuJoCo {MUJOCO_VERSION}")
     spec = mujoco.MjSpec.from_file(str(experiment.model_path))
-    spec.add_key(name="experiment_initial", time=0, qpos=list(experiment.qpos))
+    if experiment.adapter == "panda":
+        # MjSpec 中显式解析 include 内的网格资源，保持上游模型文件原样。
+        for mesh in spec.meshes:
+            mesh.file = str(experiment.model_path.parent / "panda" / "assets" / Path(mesh.file).name)
+        hand = spec.body("hand")
+        hand.add_site(name="tool", pos=[0, 0, 0.1034], size=[0.009]*3, rgba=[0.15, 0.4, 0.85, 1])
+        for axis, color in enumerate(([0.85, 0.2, 0.2, 1], [0.2, 0.7, 0.3, 1], [0.2, 0.4, 0.9, 1])):
+            start, end = [0, 0, 0.1034], [0, 0, 0.1034]
+            end[axis] += 0.065
+            hand.add_site(name=f"tool_axis_{axis}", type=mujoco.mjtGeom.mjGEOM_CAPSULE,
+                          fromto=start + end, size=[0.002]*3, rgba=color)
+    spec.add_key(name="experiment_initial", time=0, qpos=list(experiment.qpos), ctrl=list(experiment.initial_ctrl))
     model = spec.compile()
     data = mujoco.MjData(model)
     key = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_KEY, "experiment_initial")
@@ -25,9 +37,17 @@ def load_model(experiment: Experiment):
     return model, data
 
 
-def simulate(experiment: Experiment, duration: float | None = None) -> dict:
+def simulate(experiment: Experiment, duration: float | None = None, settings: dict | None = None) -> dict:
     model, data = load_model(experiment)
     duration = experiment.duration if duration is None else duration
+    if experiment.adapter == "panda":
+        from .panda import simulate_panda
+        result = simulate_panda(experiment, model, data, duration, settings)
+        result.update(experiment=experiment.public(), duration=duration,
+                      created_at=datetime.now(timezone.utc).isoformat(),
+                      runtime={"mujoco": mujoco.__version__, "system": platform.system(), "timestep": model.opt.timestep},
+                      initial_qpos=list(experiment.qpos), final_qpos=data.qpos.tolist())
+        return result
     ratio = duration / model.opt.timestep
     if not math.isfinite(duration) or not 0 < duration <= 10 or not math.isclose(ratio, round(ratio)):
         raise ValueError("时长需在 (0, 10] 秒内，且为仿真步长的整数倍")
