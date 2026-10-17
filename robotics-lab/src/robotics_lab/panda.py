@@ -102,9 +102,22 @@ class PandaController:
 
     @staticmethod
     def _vector(value, count, name):
-        result = np.asarray(value, dtype=float)
+        try:
+            result = np.asarray(value, dtype=float)
+        except (TypeError, ValueError, OverflowError) as error:
+            raise ValueError(f"{name} 需要 {count} 个有限数值") from error
         if result.shape != (count,) or not np.all(np.isfinite(result)):
             raise ValueError(f"{name} 需要 {count} 个有限数值")
+        return result
+
+    @staticmethod
+    def _scalar(value, name):
+        try:
+            result = float(value)
+        except (TypeError, ValueError, OverflowError) as error:
+            raise ValueError(f"{name} 需要有限数值") from error
+        if not math.isfinite(result):
+            raise ValueError(f"{name} 需要有限数值")
         return result
 
     def configure(self, values):
@@ -115,11 +128,11 @@ class PandaController:
         joints = self._vector(values.get("joints", self.target_q), 7, "关节目标")
         if np.any(joints < self.model.jnt_range[:7, 0]) or np.any(joints > self.model.jnt_range[:7, 1]):
             raise ValueError("关节目标超出模型限位")
-        width = float(values.get("gripper_width", self.width))
-        scale = float(values.get("gain_scale", self.gain_scale))
-        if not math.isfinite(width) or not 0 <= width <= 0.08:
+        width = self._scalar(values.get("gripper_width", self.width), "夹爪开口")
+        scale = self._scalar(values.get("gain_scale", self.gain_scale), "增益倍率")
+        if not 0 <= width <= 0.08:
             raise ValueError("夹爪开口需在 [0, 0.08] m 内")
-        if not math.isfinite(scale) or not 0.05 <= scale <= 1.5:
+        if not 0.05 <= scale <= 1.5:
             raise ValueError("增益倍率需在 [0.05, 1.5] 内")
         target = self._vector(values.get("target", self.target), 3, "末端目标")
         if np.any(np.abs(target) > 2):
@@ -131,13 +144,17 @@ class PandaController:
         if not isinstance(compensation, bool):
             raise ValueError("重力补偿需为布尔值")
         profile = values.get("profile", self.profile)
-        if profile not in {"quintic", "linear"}:
+        if not isinstance(profile, str) or profile not in {"quintic", "linear"}:
             raise ValueError("轨迹类型不支持")
-        friction = float(values.get("friction", self.friction))
-        if not math.isfinite(friction) or not 0.02 <= friction <= 2:
+        friction = self._scalar(values.get("friction", self.friction), "滑动摩擦系数")
+        if not 0.02 <= friction <= 2:
             raise ValueError("滑动摩擦系数需在 [0.02, 2] 内")
-        self.target_q, self.target = joints.copy(), target.copy()
-        self.width, self.gain_scale = width, scale
+        # 抓取阶段负责目标与开口；网页整份参数只更新可调控制和物理参数。
+        task_active = self.mode == "grasp" and self.task is not None
+        if not task_active:
+            self.target_q, self.target = joints.copy(), target.copy()
+            self.width = width
+        self.gain_scale = scale
         self.velocity, self.compensation, self.profile = velocity, compensation, profile
         self.friction = friction
         self._set_friction()
@@ -154,7 +171,8 @@ class PandaController:
             self.data.qpos[:7] = solution
             self.data.qvel[:] = 0
             mujoco.mj_forward(self.model, self.data)
-        self.reference_q = self.target_q.copy()
+        if not task_active:
+            self.reference_q = self.target_q.copy()
         self._marker()
 
     def start_motion(self):

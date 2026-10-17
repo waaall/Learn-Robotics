@@ -95,20 +95,15 @@ function App() {
       .then(([items, info]) => {
         setCourses(items);
         setSystem(info);
-        if (info.session) {
-          setSelected(info.session.experiment_id);
-          setSettings(
-            defaults(
-              items
-                .flatMap((c) => c.lessons)
-                .find((l) => l.experiment_id === info.session!.experiment_id)
-                ?.mode,
-            ),
-          );
-        } else if (
-          !items.some((c) => c.lessons.some((l) => l.id === selection.current))
-        )
-          setSelected(items[0].lessons[0].id);
+        const lessons = items.flatMap((c) => c.lessons);
+        const initialLesson =
+          lessons.find((l) =>
+            info.session
+              ? l.experiment_id === info.session.experiment_id
+              : l.id === selection.current,
+          ) || lessons[0];
+        setSelected(initialLesson.id);
+        setSettings(defaults(initialLesson.mode));
       })
       .catch((e) => {
         if (!controller.signal.aborted) setError(String(e));

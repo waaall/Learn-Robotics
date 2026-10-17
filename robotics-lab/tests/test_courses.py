@@ -43,6 +43,29 @@ class CourseTests(unittest.TestCase):
             self.assertEqual(client.post("/api/runs", json={"experiment_id": "panda-fk", "duration": 0.01,
                                                             "settings": {"joints": [99] * 7}}).status_code, 422)
 
+    def test_invalid_setting_types_return_validation_errors(self):
+        from robotics_lab.api import create_app
+        cases = [
+            ({"gripper_width": None}, "夹爪开口"),
+            ({"gain_scale": None}, "增益倍率"),
+            ({"profile": []}, "轨迹类型"),
+            ({"friction": {}}, "滑动摩擦系数"),
+            ({"joints": [{}] * 7}, "关节目标"),
+            ({"target": {}}, "末端目标"),
+            ({"velocity": [None] * 7}, "关节速度"),
+        ]
+        with tempfile.TemporaryDirectory() as directory, TestClient(create_app(Path(directory))) as client:
+            for settings, field in cases:
+                with self.subTest(settings=settings):
+                    response = client.post("/api/runs", json={
+                        "experiment_id": "panda-fk", "duration": 0.001, "settings": settings})
+                    self.assertEqual(response.status_code, 422)
+                    self.assertIn(field, response.json()["detail"])
+            # 校验失败后仍能正常计算和保存记录。
+            self.assertEqual(client.post("/api/runs", json={
+                "experiment_id": "panda-fk", "duration": 0.001,
+                "settings": {"gripper_width": 0.04}}).status_code, 201)
+
     def test_temporarily_unreadable_state_retains_last_valid_observation(self):
         from robotics_lab.sessions import Session, SessionManager
         with tempfile.TemporaryDirectory() as directory:
@@ -132,6 +155,30 @@ class PandaTests(unittest.TestCase):
               result["state"]["place_success"], flush=True)
         self.assertTrue(result["state"]["grasp_lifted"])
         self.assertTrue(result["state"]["place_success"])
+
+    def test_applying_parameters_during_grasp_preserves_motion_and_success(self):
+        c = self.make_controller("grasp")
+        c.start_grasp()
+        settings = {"joints": HOME.tolist(), "target": [0.45, 0.12, 0.42],
+                    "gripper_width": 0.08, "gain_scale": 1.0, "compensation": True,
+                    "velocity": [0] * 7, "profile": "quintic", "friction": 1.0}
+        for step in range(18000):
+            c.step()
+            # 同时覆盖下降阶段的关节目标与抬升阶段的闭合夹爪。
+            if step + 1 in {2500, 6000}:
+                target_q, target, reference = c.target_q.copy(), c.target.copy(), c.reference_q.copy()
+                width, phase = c.width, c.phase
+                c.configure({**settings, "friction": 0.8})
+                self.assertEqual(c.friction, 0.8)
+                c.configure(settings)
+                np.testing.assert_array_equal(c.target_q, target_q)
+                np.testing.assert_array_equal(c.target, target)
+                np.testing.assert_array_equal(c.reference_q, reference)
+                self.assertEqual(c.width, width)
+                self.assertEqual(c.phase, phase)
+        state = c.state()
+        self.assertTrue(state["grasp_lifted"])
+        self.assertTrue(state["place_success"])
 
     def test_studio_percent_speed_and_single_step(self):
         from mujoco.experimental.studio import messages, sim
