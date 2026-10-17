@@ -2,7 +2,13 @@ import { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "katex/dist/katex.min.css";
 import "./style.css";
-import { Chart, Controls, Readings, Theory } from "./widgets";
+import {
+  Chart,
+  Controls,
+  ExperimentActions,
+  Readings,
+  Theory,
+} from "./widgets";
 import {
   defaults,
   GEOMETRIC,
@@ -55,7 +61,13 @@ function App() {
   const [run, setRun] = useState<Run | null>(null),
     [busy, setBusy] = useState(""),
     [error, setError] = useState("");
-  const [mobileView, setMobileView] = useState("theory");
+  const [directoryOpen, setDirectoryOpen] = useState(() => {
+    try {
+      return localStorage.getItem("robotics-lab.directory-open.v1") === "true";
+    } catch {
+      return false;
+    }
+  });
   const [joint, setJoint] = useState(0),
     [completed, setCompleted] = useState<string[]>(() => {
       try {
@@ -152,6 +164,14 @@ function App() {
     historyReplace(selected);
   }, [selected]);
   useEffect(() => {
+    if (!directoryOpen) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") showDirectory(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [directoryOpen]);
+  useEffect(() => {
     const onHash = () => {
       const id = location.hash.slice(1);
       if (
@@ -166,6 +186,18 @@ function App() {
   });
   function historyReplace(id: string) {
     window.history.replaceState(null, "", `#${id}`);
+  }
+  function showDirectory(open: boolean) {
+    setDirectoryOpen(open);
+    if (!open)
+      document
+        .getElementById("directory-toggle")
+        ?.focus({ preventScroll: true });
+    try {
+      localStorage.setItem("robotics-lab.directory-open.v1", String(open));
+    } catch {
+      /* 目录仍可正常展开和收起。 */
+    }
   }
   async function perform(name: string, action: () => Promise<void>) {
     setBusy(name);
@@ -194,6 +226,8 @@ function App() {
       setRun(null);
       setJoint(0);
       actions.current = [];
+      if (window.matchMedia("(max-width: 1100px)").matches)
+        showDirectory(false);
       window.scrollTo(0, 0);
     });
   }
@@ -285,6 +319,15 @@ function App() {
   return (
     <div className="app">
       <header className="topbar">
+        <button
+          className="button directory-toggle"
+          id="directory-toggle"
+          aria-expanded={directoryOpen}
+          aria-controls="course-directory"
+          onClick={() => showDirectory(!directoryOpen)}
+        >
+          <span aria-hidden="true">☰</span> 课程目录
+        </button>
         <a
           className="brand"
           href="#panda-structure"
@@ -302,14 +345,26 @@ function App() {
             : "检查运行环境…"}
         </span>
       </header>
-      <div className="layout">
-        <aside className="sidebar">
+      <div className="layout" data-directory-open={directoryOpen}>
+        {directoryOpen && (
+          <button
+            className="directory-backdrop"
+            aria-label="收起课程目录"
+            onClick={() => showDirectory(false)}
+          />
+        )}
+        <aside
+          className="sidebar"
+          id="course-directory"
+          hidden={!directoryOpen}
+          aria-label="课程目录"
+        >
           <p className="eyebrow">交互课程</p>
-          <h1>
+          <h2>
             在实验中理解
             <br />
             机器人的运动。
-          </h1>
+          </h2>
           <label className="course-label" htmlFor="course">
             课程目录
           </label>
@@ -377,140 +432,168 @@ function App() {
               <p className="eyebrow">
                 LESSON {String(index + 1).padStart(2, "0")}
               </p>
-              <h2>{lesson?.title || "正在加载课程"}</h2>
+              <h1>{lesson?.title || "正在加载课程"}</h1>
               <p>{lesson?.summary}</p>
             </div>
-            <button
-              className={`button completion ${completed.includes(selected) ? "done" : ""}`}
-              onClick={toggleCompleted}
-            >
-              {completed.includes(selected) ? "✓ 已标记完成" : "标记本课完成"}
-            </button>
+            <div className="lesson-actions">
+              <div className="lesson-navigation" aria-label="切换课时">
+                <button
+                  className="button small"
+                  disabled={index <= 0 || !!busy}
+                  onClick={() =>
+                    void changeLesson(course!.lessons[index - 1].id)
+                  }
+                >
+                  ← 上一课
+                </button>
+                <button
+                  className="button small"
+                  disabled={
+                    !course || index === course.lessons.length - 1 || !!busy
+                  }
+                  onClick={() =>
+                    void changeLesson(course!.lessons[index + 1].id)
+                  }
+                >
+                  下一课 →
+                </button>
+              </div>
+              <button
+                className="text-button theory-link"
+                onClick={() => {
+                  const theory = document.getElementById("lesson-theory");
+                  theory?.scrollIntoView({ block: "start" });
+                  theory?.focus({ preventScroll: true });
+                }}
+              >
+                原理与操作步骤 ↓
+              </button>
+              <button
+                className={`button completion ${completed.includes(selected) ? "done" : ""}`}
+                onClick={toggleCompleted}
+              >
+                {completed.includes(selected) ? "✓ 已标记完成" : "标记本课完成"}
+              </button>
+            </div>
           </div>
           {error && (
             <div className="error" role="alert">
               {error}
             </div>
           )}
-          <div className="view-switch" aria-label="学习视图">
-            <button
-              className="button"
-              aria-pressed={mobileView === "theory"}
-              onClick={() => setMobileView("theory")}
-            >
-              原理讲解
-            </button>
-            <button
-              className="button"
-              aria-pressed={mobileView === "lab"}
-              onClick={() => setMobileView("lab")}
-            >
-              交互实验
-            </button>
-          </div>
-          <div className="learning-grid" data-mobile-view={mobileView}>
-            {lesson && <Theory lesson={lesson} />}
+          <div className="lesson-content">
             <section className="lab" aria-label="交互实验">
-              <div className="panel viewer-panel">
-                <div className="panel-heading">
-                  <div>
-                    <span className={`indicator ${ready ? "ready" : ""}`} />
-                    <strong>
-                      {ready
-                        ? "交互实验已就绪"
-                        : session?.status === "starting"
-                          ? "正在加载仿真"
-                          : "交互实验"}
-                    </strong>
-                  </div>
-                  <div className="toolbar">
-                    {ready && (
-                      <a href={viewerUrl} target="_blank" rel="noreferrer">
-                        独立窗口 ↗
-                      </a>
-                    )}
-                    {session ? (
-                      <button
-                        className="button small"
-                        disabled={!!busy}
-                        onClick={() =>
-                          void perform("stop", async () => {
-                            await request("/api/sessions/current", {
-                              method: "DELETE",
-                            });
-                            setSystem((prev) =>
-                              prev ? { ...prev, session: null } : prev,
-                            );
-                            setState(null);
-                          })
-                        }
-                      >
-                        结束实验
-                      </button>
-                    ) : (
-                      <button
-                        className="button primary small"
-                        disabled={
-                          !!busy || !system?.viewer.available || !lesson
-                        }
-                        onClick={() => void openExperiment()}
-                      >
-                        {busy === "open" ? "正在启动…" : "打开交互实验"}
-                      </button>
-                    )}
-                  </div>
-                </div>
-                <div className="viewer-surface">
-                  {ready ? (
-                    <iframe
-                      title="官方交互仿真窗口"
-                      src={viewerUrl}
-                      allow="fullscreen"
-                    />
-                  ) : (
-                    <div className="viewer-placeholder">
-                      <div className="axis-graphic">
-                        <span>X</span>
-                        <span>Y</span>
-                        <span>Z</span>
-                      </div>
-                      <h3>
-                        {panda
-                          ? "Panda 机械臂实验工作台"
-                          : "基础物理实验工作台"}
-                      </h3>
-                      <p>
-                        {session?.error ||
-                          (system?.viewer.available
-                            ? "打开三维场景，将本课原理与实际观测对应。"
-                            : system?.viewer.reason || "正在检查运行组件…")}
-                      </p>
+              <div className="experiment-workspace" data-has-inspector={panda}>
+                <div className="panel viewer-panel">
+                  <div className="panel-heading">
+                    <div>
+                      <span className={`indicator ${ready ? "ready" : ""}`} />
+                      <strong>
+                        {ready
+                          ? "交互实验已就绪"
+                          : session?.status === "starting"
+                            ? "正在加载仿真"
+                            : "交互实验"}
+                      </strong>
                     </div>
-                  )}
+                    <div className="toolbar">
+                      {ready && (
+                        <a href={viewerUrl} target="_blank" rel="noreferrer">
+                          独立窗口 ↗
+                        </a>
+                      )}
+                      {session ? (
+                        <button
+                          className="button small"
+                          disabled={!!busy}
+                          onClick={() =>
+                            void perform("stop", async () => {
+                              await request("/api/sessions/current", {
+                                method: "DELETE",
+                              });
+                              setSystem((prev) =>
+                                prev ? { ...prev, session: null } : prev,
+                              );
+                              setState(null);
+                            })
+                          }
+                        >
+                          结束实验
+                        </button>
+                      ) : (
+                        <button
+                          className="button primary small"
+                          disabled={
+                            !!busy || !system?.viewer.available || !lesson
+                          }
+                          onClick={() => void openExperiment()}
+                        >
+                          {busy === "open" ? "正在启动…" : "打开交互实验"}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  <div className="viewer-surface">
+                    {ready ? (
+                      <iframe
+                        title="官方交互仿真窗口"
+                        src={viewerUrl}
+                        allow="fullscreen"
+                      />
+                    ) : (
+                      <div className="viewer-placeholder">
+                        <div className="axis-graphic">
+                          <span>X</span>
+                          <span>Y</span>
+                          <span>Z</span>
+                        </div>
+                        <h3>
+                          {panda
+                            ? "Panda 机械臂实验工作台"
+                            : "基础物理实验工作台"}
+                        </h3>
+                        <p>
+                          {session?.error ||
+                            (system?.viewer.available
+                              ? "打开三维场景，将本课原理与实际观测对应。"
+                              : system?.viewer.reason || "正在检查运行组件…")}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                  <p className="viewer-caption">
+                    {panda
+                      ? GEOMETRIC.includes(mode)
+                        ? "几何实验 · 直接更新构型与运动学观测"
+                        : "动力学实验 · 执行器、重力与接触共同决定运动"
+                      : "使用官方窗口中的暂停、步进和初态恢复控件"}
+                    {panda && <span>高级面板可从查看器 View 菜单展开</span>}
+                  </p>
                 </div>
-                <p className="viewer-caption">
-                  {panda
-                    ? GEOMETRIC.includes(mode)
-                      ? "几何实验 · 直接更新构型与运动学观测"
-                      : "动力学实验 · 执行器、重力与接触共同决定运动"
-                    : "使用官方窗口中的暂停、步进和初态恢复控件"}
-                </p>
+                {panda && (
+                  <aside
+                    className="experiment-inspector"
+                    aria-label="实验观测与参数"
+                  >
+                    <Readings state={latest} mode={mode} live={!!state} />
+                    <Controls
+                      mode={mode}
+                      settings={settings}
+                      set={setSettings}
+                      joint={joint}
+                      setJoint={setJoint}
+                    />
+                  </aside>
+                )}
               </div>
               {panda && (
-                <Controls
+                <ExperimentActions
                   mode={mode}
-                  settings={settings}
-                  set={setSettings}
-                  joint={joint}
-                  setJoint={setJoint}
                   ready={ready}
                   busy={!!busy}
                   paused={!!state?.paused}
                   act={(action) => void control(action)}
                 />
-              )}
-              {panda && latest && (
-                <Readings state={latest} mode={mode} live={!!state} />
               )}
               {panda && (
                 <div className="panel live-chart">
@@ -552,67 +635,68 @@ function App() {
                   </p>
                 </div>
               )}
-              <div className="panel independent">
-                <div className="panel-heading">
-                  <div>
-                    <p className="section-label">独立数值验证</p>
-                    <h3>从预设初态重新计算</h3>
-                  </div>
-                  <button
-                    className="button"
-                    disabled={!!busy || !lesson}
-                    onClick={() =>
-                      void perform("run", async () => {
-                        setRun(null);
-                        setRun(
-                          await request<Run>(
-                            "/api/runs",
-                            post({
-                              experiment_id: lesson!.experiment_id,
-                              settings: panda ? settings : null,
-                            }),
-                          ),
-                        );
-                      })
-                    }
-                  >
-                    {busy === "run" ? "正在计算…" : "运行独立验证"}
-                  </button>
-                </div>
-                <p className="panel-note">
-                  使用本页参数和本课预设初态，单独计算一次；结果不读取或改变上方交互会话。
-                </p>
-                {run && (
-                  <>
-                    <Chart
-                      samples={run.samples}
-                      joint={joint}
-                      mode={mode}
-                      unit={run.experiment.observable_unit}
-                    />
-                    <div className="metrics">
-                      {Object.entries(run.metrics).map(([key, value]) => (
-                        <div key={key}>
-                          <span>{LABELS[key] || key}</span>
-                          <strong>
-                            {Number.isInteger(value)
-                              ? value
-                              : value.toPrecision(5)}
-                          </strong>
-                        </div>
-                      ))}
-                    </div>
-                    <a
-                      className="download"
-                      href={`/api/runs/${run.id}`}
-                      download={`${selected}-${run.id}.json`}
-                    >
-                      下载本次数值记录 ↗
-                    </a>
-                  </>
-                )}
-              </div>
             </section>
+            {lesson && <Theory lesson={lesson} />}
+            <div className="panel independent">
+              <div className="panel-heading">
+                <div>
+                  <p className="section-label">独立数值验证</p>
+                  <h3>从预设初态重新计算</h3>
+                </div>
+                <button
+                  className="button"
+                  disabled={!!busy || !lesson}
+                  onClick={() =>
+                    void perform("run", async () => {
+                      setRun(null);
+                      setRun(
+                        await request<Run>(
+                          "/api/runs",
+                          post({
+                            experiment_id: lesson!.experiment_id,
+                            settings: panda ? settings : null,
+                          }),
+                        ),
+                      );
+                    })
+                  }
+                >
+                  {busy === "run" ? "正在计算…" : "运行独立验证"}
+                </button>
+              </div>
+              <p className="panel-note">
+                使用本页参数和本课预设初态，单独计算一次；结果不读取或改变上方交互会话。
+              </p>
+              {run && (
+                <>
+                  <Chart
+                    samples={run.samples}
+                    joint={joint}
+                    mode={mode}
+                    unit={run.experiment.observable_unit}
+                  />
+                  <div className="metrics">
+                    {Object.entries(run.metrics).map(([key, value]) => (
+                      <div key={key}>
+                        <span>{LABELS[key] || key}</span>
+                        <strong>
+                          {Number.isInteger(value)
+                            ? value
+                            : value.toPrecision(5)}
+                        </strong>
+                      </div>
+                    ))}
+                  </div>
+                  <a
+                    className="download"
+                    href={`/api/runs/${run.id}`}
+                    download={`${selected}-${run.id}.json`}
+                  >
+                    下载本次数值记录 ↗
+                  </a>
+                </>
+              )}
+            </div>
           </div>
           <footer className="lesson-footer">
             <button

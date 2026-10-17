@@ -27,8 +27,10 @@ def main() -> None:
         if args.bridge is None:
             parser.error("Panda 课程需要 --bridge")
         plugins = [PandaStudio(model, data, experiment.mode, args.bridge)]
+    ui_config = viewer_app.ViewerAppConfig(
+        show_options=experiment.adapter != "panda", show_inspector=experiment.adapter != "panda")
     launch_web.run(config, model=model, data=data,
-                   viewer_plugins=[viewer_app.ViewerApp()],
+                   viewer_plugins=[viewer_app.ViewerApp(ui_config)],
                    sim_plugins=plugins)
 
 

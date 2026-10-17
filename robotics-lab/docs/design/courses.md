@@ -19,6 +19,12 @@
 
 `adapter` 指定实验适配模块。Panda 的七关节、夹爪映射和工具点定义位于 Panda 模块中；课程、课时标识和运行记录接口没有固定关节数量。后续人形课程需要新增相应的浮动基座、接触和控制适配，当前没有人形模型运行或控制能力的验收结论。
 
+页面以实验操作为主要工作区：三维查看器位于左侧，课时对应的观测和参数位于右侧，操作按钮与过程曲线位于其下。研究问题、原理、公式、步骤和分析位于实验区下方，顶部提供直接跳转；独立数值验证单独保留在讲解之后。旋转矩阵、雅可比和完整关节表可按需展开。
+
+课程目录默认收起，通过顶部按钮展开，展开状态保存在浏览器 `robotics-lab.directory-open.v1` 中；刷新时恢复，存储不可用时仍可操作。桌面展开目录会重新分配主区域宽度，1100 px 及以下使用抽屉；Escape、遮罩或选课可收起抽屉。实验区根据主内容容器宽度切换横向或纵向排列，850 px 及以下按三维实验、观测、参数的顺序展示。
+
+Panda 会话通过 [MuJoCo 3.16.0 ViewerAppConfig](https://github.com/google-deepmind/mujoco/blob/3.16.0/python/mujoco/experimental/studio/viewer_app.py) 将 `show_options` 与 `show_inspector` 初始设为 `False`，保留官方 View 菜单及其面板开关。基础物理会话保留这两个面板，其原有操作控件继续可用。
+
 ## 2. 模型来源与场景
 
 上游：[MuJoCo Menagerie，提交 62ab00f2](https://github.com/google-deepmind/mujoco_menagerie/tree/62ab00f2bc44f6f20c1c9b7a13f3fb1dd41a4e35/franka_emika_panda)。复制 `panda.xml` 与 `assets/`，保留上游 README 和 Apache-2.0 LICENSE，来源记录位于模型目录的 `upstream.json`。

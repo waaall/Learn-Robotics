@@ -1,4 +1,5 @@
 :root {
+  --header-height: 64px;
   font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
   color: #223b52;
   background: #f3f6f8;
@@ -69,13 +70,29 @@ summary {
   cursor: pointer;
 }
 .topbar {
-  height: 68px;
+  height: var(--header-height);
   display: flex;
   align-items: center;
-  padding: 18px 30px;
+  padding: 12px 24px;
   border-bottom: 1px solid #cbd6df;
-  gap: 22px;
+  gap: 20px;
   background: #fbfcfd;
+  position: sticky;
+  top: 0;
+  z-index: 60;
+}
+.directory-toggle {
+  flex: none;
+}
+.directory-toggle[aria-expanded="true"] {
+  background: #eaf2f7;
+  border-color: #77a3bf;
+}
+.directory-toggle span {
+  margin-right: 5px;
+}
+.directory-backdrop {
+  display: none;
 }
 .brand {
   font-family: Bahnschrift, "Arial Narrow", sans-serif;
@@ -102,17 +119,22 @@ summary {
 }
 .layout {
   display: grid;
-  grid-template-columns: 248px minmax(0, 1fr);
-  max-width: 2000px;
+  grid-template-columns: minmax(0, 1fr);
   margin: auto;
+}
+.layout[data-directory-open="true"] {
+  grid-template-columns: 248px minmax(0, 1fr);
+}
+.sidebar[hidden] {
+  display: none;
 }
 .sidebar {
   padding: 32px 20px 24px;
   border-right: 1px solid #d2dce4;
   background: #eaf0f4;
   position: sticky;
-  top: 0;
-  height: 100vh;
+  top: var(--header-height);
+  height: calc(100dvh - var(--header-height));
   overflow: auto;
 }
 .eyebrow,
@@ -123,7 +145,7 @@ summary {
   display: block;
   margin-bottom: 9px;
 }
-.sidebar h1 {
+.sidebar h2 {
   font-size: 23px;
   font-weight: 600;
   line-height: 1.6;
@@ -208,8 +230,9 @@ summary {
   line-height: 2;
 }
 .course-main {
-  padding: 28px 32px 24px;
+  padding: 18px 24px 28px;
   min-width: 0;
+  container: course / inline-size;
 }
 .breadcrumb {
   font-size: 11px;
@@ -230,16 +253,33 @@ summary {
   align-items: center;
   justify-content: space-between;
   gap: 20px;
-  padding: 29px 0 28px;
+  padding: 16px 0 20px;
+}
+.lesson-heading .eyebrow {
+  margin-bottom: 4px;
+}
+.lesson-actions,
+.lesson-navigation {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.lesson-actions {
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+.theory-link {
+  padding: 7px 10px;
+  font-size: 11px;
 }
 .lesson-heading .eyebrow {
   color: #316e9e;
 }
-.lesson-heading h2 {
-  font-size: 30px;
+.lesson-heading h1 {
+  font-size: 26px;
   letter-spacing: -0.04em;
   font-weight: 600;
-  margin-bottom: 8px;
+  margin-bottom: 4px;
 }
 .lesson-heading p:last-child {
   font-size: 12px;
@@ -287,18 +327,141 @@ summary {
   margin-bottom: 20px;
   white-space: pre-wrap;
 }
-.learning-grid {
+.lesson-content {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+.experiment-workspace {
+  --workspace-height: clamp(440px, calc(100dvh - 320px), 820px);
   display: grid;
-  grid-template-columns: minmax(300px, 0.8fr) minmax(510px, 1.35fr);
-  gap: 28px;
-  align-items: start;
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 30%);
+  gap: 16px;
+  align-items: stretch;
+  min-width: 0;
+}
+.experiment-workspace[data-has-inspector="false"] {
+  grid-template-columns: minmax(0, 1fr);
+}
+.viewer-panel {
+  height: var(--workspace-height);
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.experiment-inspector {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-height: var(--workspace-height);
+  overflow-y: auto;
+  min-width: 0;
+  scrollbar-gutter: stable;
+  overscroll-behavior-y: contain;
+}
+.experiment-inspector > .panel {
+  flex: none;
+}
+.experiment-inspector .panel-heading {
+  padding: 12px 16px;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+}
+.experiment-inspector .readings-grid {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px;
+  padding: 14px 18px;
+}
+.experiment-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 20px;
+  padding: 12px 16px;
+}
+.experiment-actions .control-actions {
+  margin: 0;
+}
+.experiment-actions .control-hint {
+  padding: 0;
+}
+.readings .panel-note {
+  min-height: 52px;
+}
+.readings details summary {
+  line-height: 1.8;
+}
+.readings .reading-line {
+  overflow-wrap: anywhere;
+}
+.lab > .live-chart .chart,
+.independent .chart {
+  max-width: 1100px;
+  margin: auto;
+}
+.viewer-caption {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 4px 16px;
+}
+.viewer-caption span {
+  color: #526b7e;
+}
+.lesson-footer {
+  margin-top: 32px;
+}
+.theory:focus {
+  outline: none;
+}
+.theory:focus-visible {
+  outline: 3px solid #77adcb;
+  outline-offset: 4px;
+}
+.viewer-panel > .panel-heading,
+.viewer-panel > .viewer-caption {
+  flex: none;
+}
+.viewer-panel .viewer-surface {
+  flex: 1;
+  min-height: 0;
+  height: auto;
+}
+.viewer-placeholder {
+  overflow: auto;
+}
+.viewer-placeholder p {
+  max-height: 8em;
+  overflow: auto;
+  overflow-wrap: anywhere;
+}
+.experiment-actions .control-actions .button {
+  font-size: 12px;
+  padding: 8px 13px;
+}
+@container course (max-width: 850px) {
+  .experiment-workspace {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .experiment-inspector {
+    max-height: none;
+    overflow: visible;
+    scrollbar-gutter: auto;
+  }
+  .viewer-panel {
+    height: clamp(420px, 62dvh, 650px);
+  }
 }
 .theory {
   min-width: 0;
   background: #fbfcfd;
   border: 1px solid #d2dce4;
   border-radius: 6px;
-  padding: 24px;
+  padding: 32px 44px;
+  width: 100%;
+  max-width: 1100px;
+  align-self: center;
+  scroll-margin-top: calc(var(--header-height) + 16px);
 }
 .question {
   border-bottom: 1px solid #dbe3e9;
@@ -826,192 +989,148 @@ summary {
   width: 75px;
   text-align: right;
 }
-@media (min-width: 1800px) {
-  .learning-grid {
-    grid-template-columns: minmax(400px, 0.85fr) minmax(600px, 1.4fr);
-    gap: 36px;
-  }
-  .theory {
-    padding: 30px;
-  }
-  .viewer-surface {
-    height: 530px;
-  }
-}
-.view-switch {
-  display: none;
-}
-.view-switch [aria-pressed="true"]:hover:not(:disabled) {
-  background: #285d85;
-  color: white;
-}
-.viewer-placeholder {
-  overflow: auto;
-}
-.viewer-placeholder p {
-  max-height: 8em;
-  overflow: auto;
-  overflow-wrap: anywhere;
-}
-@media (max-width: 1250px) {
-  .layout {
-    grid-template-columns: 220px minmax(0, 1fr);
-  }
-  .course-main {
-    padding: 25px 24px;
-  }
-  .learning-grid {
+@media (max-width: 1100px) {
+  .layout[data-directory-open="true"] {
     grid-template-columns: minmax(0, 1fr);
   }
-  .view-switch {
-    display: flex;
-    gap: 10px;
-    margin-bottom: 18px;
-  }
-  .view-switch [aria-pressed="true"] {
-    background: #316e9e;
-    color: white;
-    border-color: #316e9e;
-  }
-  .learning-grid[data-mobile-view="theory"] > .lab {
-    display: none;
-  }
-  .learning-grid[data-mobile-view="lab"] > .theory {
-    display: none;
-  }
-  .theory {
-    order: 1;
-  }
-  .lab {
-    order: 0;
-  }
   .sidebar {
-    padding: 28px 15px;
+    position: fixed;
+    left: 0;
+    top: var(--header-height);
+    bottom: 0;
+    width: min(300px, calc(100vw - 40px));
+    height: auto;
+    z-index: 50;
+    box-shadow: 12px 0 32px #223b521a;
   }
-  .sidebar h1 {
-    font-size: 21px;
+  .directory-backdrop {
+    display: block;
+    position: fixed;
+    inset: var(--header-height) 0 0;
+    z-index: 40;
+    background: #223b5266;
+    border: 0;
   }
-  .viewer-surface {
-    height: 500px;
+  .product-name {
+    display: none;
+  }
+  .lesson-heading {
+    align-items: flex-start;
+  }
+  .lesson-actions {
+    max-width: 310px;
   }
 }
 @media (max-width: 700px) {
+  :root {
+    --header-height: 60px;
+  }
   .topbar {
-    height: auto;
-    min-height: 62px;
-    padding: 17px 16px;
-    gap: 10px;
-    flex-wrap: wrap;
+    padding: 10px 16px;
+    gap: 14px;
   }
   .brand {
     font-size: 19px;
   }
-  .product-name {
-    font-size: 10px;
-    padding-left: 12px;
-  }
   .runtime {
-    font-size: 9px;
-    width: 100%;
-    margin: 0;
-  }
-  .layout {
-    display: block;
-  }
-  .sidebar {
-    position: static;
-    height: auto;
-    padding: 20px 16px;
-    border-right: 0;
-    border-bottom: 1px solid #d2dce4;
-  }
-  .sidebar h1,
-  .sidebar .eyebrow,
-  .sidebar-note,
-  .sidebar-footer,
-  .course-subtitle,
-  .course-progress {
     display: none;
   }
-  .course-label {
-    font-size: 10px;
-  }
-  .sidebar nav {
-    margin-top: 15px;
-    flex-direction: row;
-    overflow-x: auto;
-    padding-bottom: 4px;
-    gap: 6px;
-  }
-  .lesson-link {
-    width: auto;
-    flex: none;
-    padding: 8px;
-    font-size: 10px;
-  }
-  .lesson-number {
-    font-size: 10px;
+  .directory-toggle {
+    padding: 7px 10px;
+    font-size: 11px;
   }
   .course-main {
-    padding: 20px 16px;
+    padding: 16px 16px 24px;
   }
-  .lesson-heading {
-    padding: 20px 0;
-    align-items: flex-start;
-  }
-  .lesson-heading h2 {
-    font-size: 24px;
-  }
-  .lesson-heading p:last-child {
-    font-size: 11px;
-  }
-  .completion {
-    font-size: 10px;
-    padding: 6px 8px;
-  }
-  .learning-grid {
-    gap: 18px;
-  }
-  .theory {
-    padding: 20px;
-  }
-  .viewer-surface {
-    height: 420px;
-  }
-  .panel-heading {
-    padding: 12px;
-  }
-  .panel-heading h3,
-  .panel-heading strong {
-    font-size: 11px;
-  }
-  .toolbar {
-    gap: 9px;
-  }
-  .range-row {
+  .breadcrumb {
+    flex-wrap: wrap;
     gap: 8px;
-    grid-template-columns: 65px minmax(50px, 1fr) 45px;
-  }
-  .control-actions {
-    gap: 6px;
-  }
-  .readings-grid {
-    grid-template-columns: 1fr;
-  }
-  .metrics {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
   .level {
     display: none;
   }
-  .target-controls {
-    gap: 8px;
-    padding: 14px;
+  .lesson-heading {
+    flex-direction: column;
+    gap: 12px;
+    padding: 14px 0 18px;
   }
-  .unit-note {
-    font-size: 9px;
+  .lesson-heading h1 {
+    font-size: 24px;
+  }
+  .lesson-heading p:last-child {
+    font-size: 12px;
+  }
+  .lesson-actions {
+    justify-content: flex-start;
+    max-width: none;
+  }
+  .lesson-actions .completion {
+    font-size: 10px;
+    padding: 6px 8px;
+  }
+  .theory-link {
+    padding: 6px 4px;
+  }
+  .experiment-workspace {
+    gap: 14px;
+  }
+  .viewer-panel {
+    height: 460px;
+  }
+  .viewer-panel > .panel-heading {
+    align-items: flex-start;
+    gap: 8px;
+    flex-wrap: wrap;
+    padding: 12px;
+  }
+  .panel-heading h3,
+  .panel-heading strong {
+    font-size: 12px;
+  }
+  .viewer-caption {
+    font-size: 10px;
+    padding: 8px 12px;
+  }
+  .toolbar {
+    gap: 10px;
+  }
+  .experiment-actions {
+    padding: 12px;
+  }
+  .experiment-actions .control-actions {
+    gap: 7px;
+  }
+  .experiment-actions .control-actions .button {
+    font-size: 11px;
+    padding: 8px 10px;
+  }
+  .experiment-inspector .readings-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .theory {
+    padding: 24px 20px;
   }
   .formula {
+    font-size: 12px;
+  }
+  .metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .lesson-footer {
+    gap: 8px;
+  }
+  .lesson-footer .button {
+    padding: 7px 10px;
     font-size: 11px;
+  }
+  .lesson-footer span {
+    font-size: 10px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
   }
 }

@@ -11,7 +11,12 @@ import {
 
 export function Theory({ lesson }: { lesson: Lesson }) {
   return (
-    <article className="theory" aria-label="原理讲解">
+    <article
+      className="theory"
+      id="lesson-theory"
+      tabIndex={-1}
+      aria-label="原理讲解"
+    >
       <div className="question">
         <span className="section-label">本课问题</span>
         <h3>{lesson.question}</h3>
@@ -180,10 +185,6 @@ type ControlsProps = {
   set: (value: Settings) => void;
   joint: number;
   setJoint: (n: number) => void;
-  ready: boolean;
-  busy: boolean;
-  paused: boolean;
-  act: (action: string) => void;
 };
 export function Controls({
   mode,
@@ -191,10 +192,6 @@ export function Controls({
   set,
   joint,
   setJoint,
-  ready,
-  busy,
-  paused,
-  act,
 }: ControlsProps) {
   const update = <K extends keyof Settings>(key: K, value: Settings[K]) =>
     set({ ...s, [key]: value });
@@ -381,6 +378,25 @@ export function Controls({
           </label>
         </>
       )}
+      <p className="control-hint">调整参数后，使用实验区下方的操作按钮应用。</p>
+    </div>
+  );
+}
+export function ExperimentActions({
+  mode,
+  ready,
+  busy,
+  paused,
+  act,
+}: {
+  mode: string;
+  ready: boolean;
+  busy: boolean;
+  paused: boolean;
+  act: (action: string) => void;
+}) {
+  return (
+    <div className="panel experiment-actions" aria-label="仿真操作">
       <div className="control-actions">
         <button
           className="button primary"
@@ -437,10 +453,22 @@ export function Readings({
   mode,
   live,
 }: {
-  state: Observation;
+  state?: Observation;
   mode: string;
   live: boolean;
 }) {
+  if (!s)
+    return (
+      <div className="panel readings">
+        <div className="panel-heading">
+          <h3>实时观测</h3>
+          <span className="unit-note">等待实验数据</span>
+        </div>
+        <p className="panel-note">
+          打开交互实验后，这里显示本课的实际状态与观测结果。
+        </p>
+      </div>
+    );
   return (
     <div className="panel readings">
       <div className="panel-heading">
@@ -460,6 +488,18 @@ export function Readings({
           <span>夹爪实际开口 / m</span>
           <strong>{num(s.gripper_width, 4)}</strong>
         </div>
+        {["joint-control", "trajectory"].includes(mode) && (
+          <div>
+            <span>参考跟踪误差 / rad</span>
+            <strong>
+              {num(
+                Math.hypot(
+                  ...s.joints.map((q, i) => q - s.reference_joints[i]),
+                ),
+              )}
+            </strong>
+          </div>
+        )}
       </div>
       {mode === "ik" && s.ik && (
         <div
@@ -483,18 +523,20 @@ export function Readings({
         </div>
       )}
       {["structure", "fk", "ik"].includes(mode) && (
-        <details open>
+        <details>
           <summary>末端旋转矩阵 R</summary>
           <Matrix values={s.tool_rotation} />
         </details>
       )}
       {mode === "jacobian" && (
         <>
-          <p className="reading-title">平移雅可比 J · 世界坐标系</p>
-          <Matrix values={s.jacobian} />
           <p className="reading-line">
             奇异值：{s.singular_values.map((v) => num(v, 4)).join(" · ")}
           </p>
+          <details>
+            <summary>平移雅可比 J · 世界坐标系</summary>
+            <Matrix values={s.jacobian} />
+          </details>
           <p className="reading-line">
             末端速度 / m·s⁻¹：
             {s.cartesian_velocity.map((v) => num(v, 4)).join(" · ")}
@@ -502,28 +544,31 @@ export function Readings({
         </>
       )}
       {["joint-control", "gravity", "trajectory"].includes(mode) && (
-        <div className="matrix-wrap">
-          <table className="joint-table">
-            <thead>
-              <tr>
-                <th>关节</th>
-                <th>实际 rad</th>
-                <th>执行器 N·m</th>
-                <th>重力项 N·m</th>
-              </tr>
-            </thead>
-            <tbody>
-              {s.joints.map((q, i) => (
-                <tr key={i}>
-                  <th>{i + 1}</th>
-                  <td>{num(q, 3)}</td>
-                  <td>{num(s.actuator_torque[i], 2)}</td>
-                  <td>{num(s.gravity_torque[i], 2)}</td>
+        <details>
+          <summary>关节角度、执行器力矩与重力项</summary>
+          <div className="matrix-wrap">
+            <table className="joint-table">
+              <thead>
+                <tr>
+                  <th>关节</th>
+                  <th>实际 rad</th>
+                  <th>执行器 N·m</th>
+                  <th>重力项 N·m</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {s.joints.map((q, i) => (
+                  <tr key={i}>
+                    <th>{i + 1}</th>
+                    <td>{num(q, 3)}</td>
+                    <td>{num(s.actuator_torque[i], 2)}</td>
+                    <td>{num(s.gravity_torque[i], 2)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </details>
       )}
     </div>
   );
