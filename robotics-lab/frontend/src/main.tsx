@@ -47,6 +47,7 @@ const LABELS: Record<string, string> = {
   max_penetration_m: "最大穿透 / m",
   joint_error_rad: "参考跟踪误差 / rad",
   tool_target_error_m: "末端目标误差 / m",
+  ik_solution_error_m: "IK 候选解残差 / m",
   max_cube_height_m: "方块最高高度 / m",
   joint_displacement_rad: "相对初态构型偏移 / rad",
   tool_height_change_m: "末端高度变化 / m",

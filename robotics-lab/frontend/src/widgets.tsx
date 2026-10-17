@@ -146,7 +146,7 @@ export function Chart({
     ),
   ];
   if (
-    ["structure", "joint-control", "trajectory"].includes(mode) &&
+    ["structure", "joint-control", "ik", "trajectory"].includes(mode) &&
     samples[0].reference_joints
   )
     series.push(samples.map((s) => s.reference_joints?.[joint] ?? 0));
@@ -463,7 +463,9 @@ export function Controls({
       <p className="control-hint">
         {mode === "structure"
           ? "输入目标角度后点击移动到目标。默认位置控制与重力补偿保持开启。"
-          : "调整参数后，使用实验区下方的操作按钮应用。"}
+          : mode === "ik"
+            ? "绿色球表示末端位置目标；求解收敛后通过位置伺服连续运动。未收敛时保留上一有效关节目标。"
+            : "调整参数后，使用实验区下方的操作按钮应用。"}
       </p>
     </div>
   );
@@ -506,7 +508,7 @@ export function ExperimentActions({
               : mode === "structure" || mode === "joint-control"
                 ? "移动到目标"
                 : mode === "ik"
-                  ? "求解并显示构型"
+                  ? "求解并移动到目标"
                   : mode === "trajectory"
                     ? "执行轨迹"
                     : "应用参数"}
@@ -777,7 +779,7 @@ export function Readings({
           <span>夹爪实际开口 / m</span>
           <strong>{num(s.gripper_width, 4)}</strong>
         </div>
-        {["structure", "joint-control", "trajectory"].includes(mode) && (
+        {["structure", "joint-control", "ik", "trajectory"].includes(mode) && (
           <div>
             <span>参考跟踪误差 / rad</span>
             <strong>
@@ -789,14 +791,29 @@ export function Readings({
             </strong>
           </div>
         )}
+        {mode === "ik" && (
+          <div>
+            <span>实际末端到目标 / mm</span>
+            <strong>
+              {s.tool_target_error_m === undefined
+                ? "—"
+                : num(s.tool_target_error_m * 1000, 3)}
+            </strong>
+          </div>
+        )}
       </div>
       {mode === "ik" && s.ik && (
         <div
           className={`solver-state ${s.ik.converged ? "success" : "warning"}`}
         >
-          {s.ik.converged ? "位置求解已收敛" : "位置求解未收敛"} ·{" "}
-          {s.ik.iterations} 次迭代 · 误差 {num(s.ik.position_error_m * 1000, 3)}{" "}
-          mm
+          <p>
+            {s.ik.converged
+              ? "IK 求解已收敛"
+              : "IK 未收敛，保留上一有效关节目标"}{" "}
+            · {s.ik.iterations} 次迭代
+          </p>
+          <p>IK 候选解残差：{num(s.ik.position_error_m * 1000, 3)} mm</p>
+          <p>{s.phase}</p>
         </div>
       )}
       {mode === "grasp" && (

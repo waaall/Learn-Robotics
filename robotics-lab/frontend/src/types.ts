@@ -46,6 +46,7 @@ export type Observation = {
   target_joints: number[];
   velocities: number[];
   tool_position: number[];
+  tool_target_error_m?: number;
   tool_rotation: number[][];
   gripper_width: number;
   actuator_torque: number[];
@@ -72,6 +73,7 @@ export type Observation = {
     converged: boolean;
     iterations: number;
     position_error_m: number;
+    target_applied?: boolean;
   } | null;
 };
 export type VelocityComparison = {
@@ -124,7 +126,7 @@ export const LIMITS = [
   [-0.0175, 3.7525],
   [-2.8973, 2.8973],
 ];
-export const GEOMETRIC = ["jacobian", "ik"];
+export const GEOMETRIC = ["jacobian"];
 export const canonicalLessonId = (id: string) =>
   id === "panda-fk" ? "panda-structure" : id;
 export function defaults(mode = "structure"): Settings {
@@ -132,10 +134,14 @@ export function defaults(mode = "structure"): Settings {
     joints: [...HOME],
     target: [0.45, 0.12, 0.42],
     gripper_width: 0.08,
-    gain_scale: ["structure", "joint-control", "trajectory"].includes(mode)
+    gain_scale: ["structure", "joint-control", "ik", "trajectory"].includes(
+      mode,
+    )
       ? 0.2
       : 1,
-    damping_scale: ["structure", "joint-control", "trajectory"].includes(mode)
+    damping_scale: ["structure", "joint-control", "ik", "trajectory"].includes(
+      mode,
+    )
       ? Math.sqrt(0.2)
       : 1,
     compensation: true,

@@ -40,6 +40,9 @@ class CourseTests(unittest.TestCase):
             self.assertEqual(response.status_code, 201)
             result = response.json()
             self.assertTrue(result["state"]["ik"]["converged"])
+            np.testing.assert_array_equal(result["samples"][0]["joints"], HOME)
+            self.assertGreater(result["state"]["tool_target_error_m"], 0.1)
+            self.assertIn("ik_solution_error_m", result["metrics"])
             self.assertEqual(client.get(f'/api/runs/{result["id"]}').json(), result)
             self.assertEqual(client.post("/api/runs", json={"experiment_id": "panda-fk", "duration": 0.01,
                                                             "settings": {"joints": [99] * 7}}).status_code, 422)
@@ -179,6 +182,59 @@ class PandaTests(unittest.TestCase):
         _, result = solve_ik(c.model, c.data.qpos, [2, 2, 2])
         self.assertFalse(result["converged"])
         self.assertGreater(result["position_error_m"], 1)
+
+    def test_ik_servo_moves_continuously_and_tracks_reachable_target(self):
+        c = self.make_controller("ik")
+        initial_q, initial_v = c.data.qpos.copy(), c.data.qvel.copy()
+        c.configure({"target": [0.45, 0.12, 0.42]})
+        np.testing.assert_array_equal(c.data.qpos, initial_q)
+        np.testing.assert_array_equal(c.data.qvel, initial_v)
+        self.assertEqual(c.data.time, 0)
+        state = c.state()
+        self.assertTrue(state["ik"]["target_applied"])
+        self.assertLess(state["ik"]["position_error_m"], 1e-4)
+        self.assertGreater(state["tool_target_error_m"], 0.1)
+        c.step()
+        self.assertGreater(np.linalg.norm(c.data.qpos[:7] - initial_q[:7]), 0)
+        self.assertGreater(np.linalg.norm(c.data.qpos[:7] - c.target_q), 0.2)
+        for _ in range(1999):
+            c.step()
+        self.assertLess(c.state()["tool_target_error_m"], 0.001)
+        self.assertLess(np.linalg.norm(c.data.qpos[:7] - c.target_q), 0.001)
+        self.assertEqual(c.phase, "关节目标跟踪完成")
+        c.reset()
+        np.testing.assert_array_equal(c.data.qpos[:7], HOME)
+        self.assertIsNone(c.state()["ik"])
+        self.assertAlmostEqual(c.state()["tool_target_error_m"], 0)
+
+    def test_ik_retarget_preserves_current_position_and_velocity(self):
+        c = self.make_controller("ik")
+        c.configure({"target": [0.45, 0.12, 0.42]})
+        for _ in range(100):
+            c.step()
+        previous_q, previous_v, previous_time = c.data.qpos.copy(), c.data.qvel.copy(), c.data.time
+        self.assertGreater(np.linalg.norm(previous_v[:7]), 0.01)
+        c.configure({"target": [0.46, -0.08, 0.44]})
+        self.assertTrue(c.ik_result["converged"])
+        np.testing.assert_array_equal(c.data.qpos, previous_q)
+        np.testing.assert_array_equal(c.data.qvel, previous_v)
+        self.assertEqual(c.data.time, previous_time)
+        np.testing.assert_array_equal(c.reference_q, c.target_q)
+
+    def test_unconverged_ik_preserves_previous_valid_joint_target(self):
+        c = self.make_controller("ik")
+        c.configure({"target": [0.45, 0.12, 0.42]})
+        for _ in range(100):
+            c.step()
+        previous_goal, previous_q, previous_v = c.target_q.copy(), c.data.qpos.copy(), c.data.qvel.copy()
+        c.configure({"target": [2, 2, 2], "joints": HOME.tolist()})
+        self.assertFalse(c.ik_result["converged"])
+        self.assertFalse(c.ik_result["target_applied"])
+        self.assertGreater(c.ik_result["position_error_m"], 1)
+        np.testing.assert_array_equal(c.target_q, previous_goal)
+        np.testing.assert_array_equal(c.reference_q, previous_goal)
+        np.testing.assert_array_equal(c.data.qpos, previous_q)
+        np.testing.assert_array_equal(c.data.qvel, previous_v)
 
     def test_pd_moves_through_dynamics_and_tracks_goal(self):
         c = self.make_controller("joint-control")
@@ -327,6 +383,28 @@ class PandaTests(unittest.TestCase):
             self.assertTrue(plugin._write())
             saved = json.loads(plugin.bridge.with_suffix(".state.json").read_text(encoding="utf-8"))
             self.assertAlmostEqual(saved["time"], 0.001)
+
+    def test_studio_ik_configure_while_paused_moves_only_on_step(self):
+        from mujoco.experimental.studio import sim
+        from robotics_lab.studio import PandaStudio
+        with tempfile.TemporaryDirectory() as directory:
+            model, data = load_model(get_experiment("panda-ik"))
+            plugin = PandaStudio(model, data, "ik", Path(directory) / "bridge")
+            plugin.step_control.set_pause_state(sim.PauseState.NORMAL_PAUSED)
+            path = plugin.bridge.with_suffix(".command.json")
+            path.write_text(json.dumps({"id": "solve", "action": "configure",
+                                        "settings": {"target": [0.45, 0.12, 0.42]}}), encoding="utf-8")
+            plugin._command()
+            self.assertIsNone(plugin.command_error)
+            self.assertEqual(plugin.step_control.get_pause_state(), sim.PauseState.NORMAL_PAUSED)
+            np.testing.assert_array_equal(data.qpos[:7], HOME)
+            self.assertEqual(data.time, 0)
+            path.write_text(json.dumps({"id": "step", "action": "step"}), encoding="utf-8")
+            plugin._command()
+            self.assertIsNone(plugin.command_error)
+            self.assertAlmostEqual(data.time, 0.001)
+            self.assertGreater(np.linalg.norm(data.qpos[:7] - HOME), 0)
+            self.assertGreater(np.linalg.norm(data.qpos[:7] - plugin.controller.target_q), 0.2)
 
 
 if __name__ == "__main__":

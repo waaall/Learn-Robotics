@@ -8,7 +8,7 @@ import mujoco
 import numpy as np
 
 HOME = np.array([0, 0, 0, -1.57079, 0, 1.57079, -0.7853])
-KINEMATIC = {"jacobian", "ik"}
+KINEMATIC = {"jacobian"}
 
 
 def fingerprint(path: Path) -> str:
@@ -74,7 +74,7 @@ class PandaController:
         self.target = self.data.site_xpos[self.tool].copy()
         self.home_rotation = self.data.site_xmat[self.tool].reshape(3, 3).copy()
         self.width = 0.08
-        self.gain_scale = 0.2 if self.mode in {"structure", "joint-control", "trajectory"} else 1.0
+        self.gain_scale = 0.2 if self.mode in {"structure", "joint-control", "ik", "trajectory"} else 1.0
         self.damping_scale = math.sqrt(self.gain_scale)
         self.compensation = True
         self.velocity = np.array([0, 0.05, 0, 0, 0, 0, 0], dtype=float) if self.mode == "jacobian" else np.zeros(7)
@@ -167,7 +167,9 @@ class PandaController:
         # 抓取阶段负责目标与开口；网页整份参数只更新可调控制和物理参数。
         task_active = self.mode == "grasp" and self.task is not None
         if not task_active:
-            self.target_q, self.target = joints.copy(), target.copy()
+            if self.mode != "ik":
+                self.target_q = joints.copy()
+            self.target = target.copy()
             self.width = width
         self.gain_scale = scale
         self.damping_scale = damping
@@ -185,10 +187,13 @@ class PandaController:
             self.velocity_comparison = None
         elif self.mode == "ik":
             solution, self.ik_result = solve_ik(self.model, self.data.qpos, target)
-            self.target_q = solution
-            self.data.qpos[:7] = solution
-            self.data.qvel[:] = 0
-            mujoco.mj_forward(self.model, self.data)
+            # 求解在辅助状态中完成；实际位置与速度由后续动力学步进连续推进。
+            self.ik_result["target_applied"] = self.ik_result["converged"]
+            if self.ik_result["converged"]:
+                self.target_q = solution
+                self.phase = "IK 已收敛 · 正在跟踪关节目标"
+            else:
+                self.phase = "IK 未收敛 · 保留上一有效关节目标"
         if not task_active:
             self.reference_q = self.target_q.copy()
         if self.mode == "gravity":
@@ -289,6 +294,9 @@ class PandaController:
             data.qfrc_applied[:7] = self.gravity_data.qfrc_bias[:7]
         mujoco.mj_step(model, data)
         mujoco.mj_forward(model, data)
+        if self.mode == "ik" and self.ik_result and self.ik_result["converged"]:
+            settled = np.linalg.norm(data.qpos[:7] - self.target_q) < 0.001 and np.linalg.norm(data.qvel[:7]) < 0.005
+            self.phase = "关节目标跟踪完成" if settled else "IK 已收敛 · 正在跟踪关节目标"
         self.max_cube_height = max(self.max_cube_height, float(data.xpos[self.cube, 2]))
 
     def _jacobian_step(self, dt):
@@ -329,6 +337,7 @@ class PandaController:
                 "target_joints": self.target_q.tolist(), "joint_limits": model.jnt_range[:7].tolist(),
                 "reference_joints": self.reference_q.tolist(),
                 "tool_position": data.site_xpos[self.tool].tolist(),
+                "tool_target_error_m": float(np.linalg.norm(data.site_xpos[self.tool] - self.target)),
                 "tool_rotation": data.site_xmat[self.tool].reshape(3, 3).tolist(),
                 "target_position": self.target.tolist(), "gripper_width": float(sum(data.qpos[7:9])),
                 "actuator_torque": data.qfrc_actuator[:7].tolist(),
@@ -398,7 +407,9 @@ def simulate_panda(experiment, model, data, duration, settings):
     elif experiment.mode == "jacobian" and state["velocity_comparison"]:
         metrics["velocity_error_m_s"] = state["velocity_comparison"]["error_norm"]
     elif experiment.mode == "ik":
-        metrics["tool_target_error_m"] = float(np.linalg.norm(np.array(state["tool_position"]) - controller.target))
+        metrics.update(tool_target_error_m=state["tool_target_error_m"],
+                       joint_error_rad=samples[-1]["joint_error"],
+                       ik_solution_error_m=state["ik"]["position_error_m"])
     elif experiment.mode == "grasp":
         metrics["max_cube_height_m"] = controller.max_cube_height
     return {"samples": samples, "state": state, "settings": settings if settings is not None else default_settings(experiment.mode),
