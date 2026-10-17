@@ -1,0 +1,24 @@
+[build-system]
+requires = ["hatchling>=1.27,<2"]
+build-backend = "hatchling.build"
+
+[project]
+name = "robotics-lab"
+version = "0.1.0"
+description = "Local robotics learning and reproducible physics experiments"
+requires-python = ">=3.12,<3.14"
+dependencies = [
+  "mujoco==3.16.0",
+  "numpy>=2,<3",
+  "fastapi>=0.115,<1",
+  "uvicorn>=0.34,<1",
+]
+
+[project.optional-dependencies]
+dev = ["httpx>=0.28,<1"]
+
+[project.scripts]
+robotics-lab = "robotics_lab.__main__:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/robotics_lab"]

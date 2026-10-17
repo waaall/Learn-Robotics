@@ -1,0 +1,29 @@
+[[experiments]]
+id = "pendulum"
+title = "重力与单摆"
+topic = "动力学"
+robot = "单自由度摆杆"
+summary = "从静止释放摆杆，观察重力作用下的运动与机械能变化。"
+model = "pendulum.xml"
+qpos = [0.4]
+duration = 2.0
+observable_index = 0
+observable_name = "关节角度"
+observable_unit = "rad"
+explanation = "摆杆的质量分布、转动惯量、重力和当前构型共同决定角加速度。本实验关闭关节阻尼与执行器，从 0.4 rad 静止释放。数值验证记录角度、速度和能量变化；仿真窗口中的关节编辑属于直接修改初态。"
+observations = ["角度与角速度的周期变化", "给定步长与时长内的机械能变化", "暂停、单步及恢复实验初态"]
+
+[[experiments]]
+id = "drop-ball"
+title = "落球与地面接触"
+topic = "接触"
+robot = "自由球体与平面"
+summary = "让 1 kg 球体自由下落，检查碰撞、稳定支撑和软接触穿透。"
+model = "drop_ball.xml"
+qpos = [0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 0.0]
+duration = 2.0
+observable_index = 2
+observable_name = "球心高度"
+observable_unit = "m"
+explanation = "重力使球体下落，接触约束产生法向支撑。有限步长与软接触会允许一定穿透。本实验球体质量 1 kg、半径 0.1 m；稳定支撑力的参考值为 9.81 N。冲击最大穿透与稳定后穿透需要分别观察。"
+observations = ["球心高度与下落速度", "接触力与重力的平衡", "冲击穿透与稳定后的几何间隙"]
