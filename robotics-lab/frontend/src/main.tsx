@@ -108,7 +108,7 @@ function App() {
     session?.status === "ready" &&
     session.experiment_id === lesson?.experiment_id;
   const viewerUrl = session
-    ? `${location.protocol}//${location.hostname}:${session.port}/`
+    ? session.url || `${location.protocol}//${location.hostname}:${session.port}/`
     : undefined;
   const latest = state || run?.state;
   const controlPanel = (

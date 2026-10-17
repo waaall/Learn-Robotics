@@ -28,8 +28,10 @@ class Session:
 
 
 class SessionManager:
-    def __init__(self, directory: Path):
+    def __init__(self, directory: Path, *, viewer_port: int = 0, viewer_url: str | None = None):
         self.directory = directory
+        self.viewer_port = viewer_port
+        self.viewer_url = viewer_url
         self.session: Session | None = None
         self.lock = threading.RLock()
         self._state_cache: dict | None = None
@@ -43,9 +45,11 @@ class SessionManager:
             if self.session and self.session.process.poll() is None:
                 raise ValueError("已有仿真会话，请先关闭当前会话")
             self.directory.mkdir(parents=True, exist_ok=True)
-            with socket.socket() as sock:
-                sock.bind(("127.0.0.1", 0))
-                port = sock.getsockname()[1]
+            port = self.viewer_port
+            if not port:
+                with socket.socket() as sock:
+                    sock.bind(("127.0.0.1", 0))
+                    port = sock.getsockname()[1]
             identifier = str(uuid4())
             log_path = self.directory / f"{identifier}.log"
             command = [sys.executable, "-m", "robotics_lab.viewer", "--experiment", experiment_id, "--port", str(port)]
@@ -83,7 +87,7 @@ class SessionManager:
                         self._terminate(session)
                         code = session.process.poll()
             return {"id": session.id, "experiment_id": session.experiment_id, "port": session.port,
-                    "status": status, "error": error, "exit_code": code}
+                    "url": self.viewer_url, "status": status, "error": error, "exit_code": code}
 
     @staticmethod
     def _terminate(session: Session) -> None:

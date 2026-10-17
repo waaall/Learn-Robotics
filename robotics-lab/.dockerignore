@@ -1,0 +1,10 @@
+*
+!Dockerfile
+!requirements.lock
+!requirements-test.lock
+!src/
+!src/**
+!tests/
+!tests/**
+**/__pycache__/
+**/*.pyc

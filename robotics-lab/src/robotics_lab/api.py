@@ -2,6 +2,7 @@
 
 from contextlib import asynccontextmanager
 import json
+import os
 from pathlib import Path
 from uuid import UUID, uuid4
 
@@ -37,8 +38,12 @@ class SessionCommand(BaseModel):
 
 
 def create_app(runtime: Path | None = None) -> FastAPI:
-    runtime = runtime or PROJECT / ".runtime"
-    manager = SessionManager(runtime / "sessions")
+    runtime = runtime or Path(os.environ.get("ROBOTICS_LAB_DATA_DIR", PROJECT / ".runtime"))
+    viewer_port = int(os.environ.get("ROBOTICS_LAB_VIEWER_PORT", "0"))
+    if not 0 <= viewer_port <= 65535:
+        raise ValueError("ROBOTICS_LAB_VIEWER_PORT 必须在 0 到 65535 之间")
+    manager = SessionManager(runtime / "sessions", viewer_port=viewer_port,
+                             viewer_url=os.environ.get("ROBOTICS_LAB_VIEWER_URL") or None)
 
     @asynccontextmanager
     async def lifespan(_app):
@@ -46,6 +51,10 @@ def create_app(runtime: Path | None = None) -> FastAPI:
         manager.stop()
 
     app = FastAPI(title="Robotics Lab", version=__version__, lifespan=lifespan)
+
+    @app.get("/api/health")
+    def health():
+        return {"status": "ok", "version": __version__}
 
     @app.get("/api/system")
     def system():

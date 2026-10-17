@@ -1,4 +1,5 @@
 from pathlib import Path
+import os
 import tempfile
 import time
 import unittest
@@ -38,6 +39,20 @@ class PhysicsTests(unittest.TestCase):
 
 
 class SessionTests(unittest.TestCase):
+    def test_fixed_viewer_port_and_public_url_survive_session_start(self):
+        process = Mock()
+        process.poll.return_value = None
+        with tempfile.TemporaryDirectory() as directory:
+            manager = SessionManager(Path(directory), viewer_port=8081, viewer_url="/viewer/")
+            with patch("robotics_lab.sessions.viewer_capability", return_value={"available": True}), \
+                 patch("robotics_lab.sessions.subprocess.Popen", return_value=process) as launch, \
+                 patch("robotics_lab.sessions.urlopen", side_effect=TimeoutError):
+                result = manager.start("pendulum")
+            self.assertEqual(result["url"], "/viewer/")
+            self.assertEqual(result["port"], 8081)
+            self.assertIn("8081", launch.call_args.args[0])
+            manager.stop()
+
     def test_running_viewer_is_not_subject_to_startup_deadline(self):
         process = Mock()
         process.poll.return_value = None
@@ -76,6 +91,18 @@ class ApiTests(unittest.TestCase):
         restored = self.client.get(f'/api/runs/{result["id"]}')
         self.assertEqual(restored.json(), result)
         self.assertEqual(len(result["model_sha256"]), 64)
+
+    def test_configured_data_directory_survives_application_restart(self):
+        with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {
+            "ROBOTICS_LAB_DATA_DIR": directory,
+            "ROBOTICS_LAB_VIEWER_PORT": "8081",
+            "ROBOTICS_LAB_VIEWER_URL": "/viewer/",
+        }):
+            with TestClient(create_app()) as client:
+                self.assertEqual(client.get("/api/health").json()["status"], "ok")
+                result = client.post("/api/runs", json={"experiment_id": "pendulum"}).json()
+            with TestClient(create_app()) as client:
+                self.assertEqual(client.get(f'/api/runs/{result["id"]}').json(), result)
 
     def test_missing_experiment_and_bad_duration_are_errors(self):
         for payload in ({"experiment_id": "missing"}, {"experiment_id": "pendulum", "duration": 11}):

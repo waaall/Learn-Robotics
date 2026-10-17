@@ -2,11 +2,31 @@
 
 机器人交互实验室。以“课程 → 课时 → 实验”组织原理讲解、公式、交互仿真和结果分析。整体产品需求见 [整体需求](docs/demand/overall-demand.md)，课程实现见 [课程与 Panda 适配](docs/design/courses.md)。项目与 `experiments/` 独立，不依赖其硬件、模型、策略、数据或运行环境。
 
-## 当前电脑快速启动
+## Docker 启动（推荐）
 
-WSL Ubuntu 环境与前端已安装、构建。在本目录的 Windows PowerShell 中执行 `./run-wsl.ps1`，再用 Windows 浏览器打开 <http://localhost:8000>。默认进入 Panda 课程；通过顶部“课程目录”选择课时后打开交互实验，也可以先调整参数并运行独立数值验证。
+Windows/macOS 安装并启动 Docker Desktop，使用 Linux 容器；Linux 安装 Docker Engine 与 Compose 插件。当前交付包为 `linux/amd64`，适用于 Intel/AMD 桌面电脑；容器内统一使用 Linux Python 3.12 和 MuJoCo 3.16.0。宿主机无需安装 Python、Node.js 或手动配置 WSL Ubuntu。ARM64 构建配置保留，Apple Silicon 包的构建与验收后续在 macOS 完成，当前未交付 ARM64 包。
 
-新电脑的安装步骤见下文。完整交互仿真使用 Linux 的 Python 环境。
+从源码首次构建并启动：
+
+```powershell
+# Windows PowerShell，在 robotics-lab 目录执行
+./run-docker.ps1 build
+./run-docker.ps1
+```
+
+```bash
+# Linux / macOS，在 robotics-lab 目录执行
+bash run-docker.sh build
+bash run-docker.sh
+```
+
+打开 <http://localhost:18320>。默认进入 Panda 课程；通过“课程目录”选择课时，再打开交互实验。API、官方查看器、模型资源和 WebSocket 使用同一个入口端口。
+
+已有离线交付 ZIP 时，解压后运行脚本的 `load` 操作，再正常启动，详见 [离线包使用与数据迁移](docs/deployment/quick-start.md)。源码构建需要联网；离线包导入后不需要下载依赖或模型。
+
+脚本支持 `build`、`load`、`up`（默认）、`stop`、`logs` 和 `status`。停止会保留数据卷。复制 `.env.example` 为 `.env` 可调整端口和数据目录。默认只向本机开放，单用户使用；远程部署需要 HTTPS、认证及浏览器跨源隔离配置。
+
+发布结构、双架构构建和打包见 [Docker 发布设计](docs/design/docker.md)，实际验证状态见 [Docker 验证记录](docs/validation/docker.md)。原有 Python/WSL 源码启动脚本保留，适合开发调试。
 
 ## 当前能力
 
@@ -26,7 +46,7 @@ Panda 资源固定于官方 Menagerie 提交 `62ab00f2bc44f6f20c1c9b7a13f3fb1dd4
 
 ## 运行环境
 
-本项目采用本地 Python 计算、浏览器访问的部署方式。官方 WebViewer 使用 Linux/WSL 路线。
+Docker 内由 Linux Python 计算，浏览器渲染三维场景。以下为不使用 Docker 时的源码运行方式；完整官方 WebViewer 使用 Linux/WSL 路线。
 
 **MuJoCo 3.16.0 原生 Windows 安装包不支持官方 WebViewer。** 上游构建配置在 Windows 跳过 `headless_ui` 和 `state_payload`，且 Windows wheel 未分发浏览器客户端。Windows 仍可运行目录、数值验证和结果查看。[上游构建配置](https://github.com/google-deepmind/mujoco/blob/3.16.0/python/mujoco/experimental/studio/web/CMakeLists.txt)
 
@@ -97,4 +117,4 @@ npm run build --prefix frontend
 | `frontend` | 实验选择、说明、仿真窗口与独立结果展示 |
 | `.runtime` | 本地生成的记录与会话日志，不纳入版本控制 |
 
-当前界面与服务按本地单用户、单查看器会话设计；长期需求中的其他功能继续单独适配。
+当前界面与服务按单用户、单查看器会话设计；Docker 不改变会话数量。长期需求中的其他功能继续单独适配。

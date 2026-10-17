@@ -27,6 +27,7 @@ export type Session = {
   experiment_id: string;
   status: string;
   port: number;
+  url?: string | null;
   error: string | null;
 };
 export type System = {
