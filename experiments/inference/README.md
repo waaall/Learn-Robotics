@@ -1,5 +1,7 @@
 # Inference：SmolVLA 离线比较与实时输入诊断
 
+新增独立的 [LLM 调度与受限执行入口](CONTROL.md)，包含工具契约、持续录像、操作日志、归一化审计和腕俯仰技能。原有离线入口与 `live` 入口保持只诊断；物理动作只由单独启动的 `supervisor --allow-motion` 服务执行。2026-10-18 的实机结果与当前基础模型处理器缺陷见[实验分析](reports/2026-10-18-llm-control.md)。
+
 模型原理见[SmolVLA：模型架构、训练与推理](../../research/smolvla-architecture.md)，包括上下文编码、动作块生成、K/V 缓存与数值积分。本文说明推理部署、诊断和指标计算。
 
 ## 范围与独立性
