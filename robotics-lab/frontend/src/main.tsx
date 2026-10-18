@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "katex/dist/katex.min.css";
 import "./style.css";
+import { HumanoidActions, HumanoidChart, HumanoidControls, HumanoidReadings } from "./humanoid";
 import {
   Chart,
   Controls,
@@ -16,10 +17,12 @@ import {
   HOME,
   type Course,
   type Observation,
+  type HumanoidObservation,
   type Run,
   type Session,
   type System,
 } from "./types";
+type RobotObservation = Observation | HumanoidObservation;
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const response = await fetch(path, options);
@@ -52,6 +55,10 @@ const LABELS: Record<string, string> = {
   joint_displacement_rad: "相对初态构型偏移 / rad",
   tool_height_change_m: "末端高度变化 / m",
   velocity_error_m_s: "预测与观测速度误差 / m·s⁻¹",
+  base_height_m: "基座高度 / m",
+  max_tilt_rad: "最大倾角 / rad",
+  displacement_m: "平面位移 / m",
+  fallen_samples: "跌倒采样数",
 };
 
 function App() {
@@ -60,9 +67,9 @@ function App() {
       canonicalLessonId(location.hash.slice(1)) || "panda-structure",
     );
   const [system, setSystem] = useState<System | null>(null),
-    [state, setState] = useState<Observation | null>(null);
+    [state, setState] = useState<RobotObservation | null>(null);
   const [settings, setSettings] = useState(() => defaults()),
-    [history, setHistory] = useState<Observation[]>([]);
+    [history, setHistory] = useState<RobotObservation[]>([]);
   const [run, setRun] = useState<Run | null>(null),
     [busy, setBusy] = useState(""),
     [error, setError] = useState("");
@@ -103,7 +110,9 @@ function App() {
   const index = course?.lessons.findIndex((l) => l.id === lesson?.id) ?? 0;
   const session = system?.session,
     mode = lesson?.mode || "structure",
-    panda = lesson?.adapter === "panda";
+    panda = lesson?.adapter === "panda",
+    humanoid = lesson?.adapter === "humanoid",
+    controlled = panda || humanoid;
   const ready =
     session?.status === "ready" &&
     session.experiment_id === lesson?.experiment_id;
@@ -111,7 +120,11 @@ function App() {
     ? session.url || `${location.protocol}//${location.hostname}:${session.port}/`
     : undefined;
   const latest = state || run?.state;
-  const controlPanel = (
+  const pandaLatest = latest && !("robot" in latest) ? latest : null;
+  const humanoidLatest = latest && "robot" in latest ? latest : null;
+  const controlPanel = humanoid && settings.humanoid ? (
+    <HumanoidControls mode={mode} settings={settings} set={setSettings} />
+  ) : (
     <Controls
       mode={mode}
       settings={settings}
@@ -157,10 +170,10 @@ function App() {
     };
   }, []);
   useEffect(() => {
-    if (!session || session.experiment_id !== selected || !panda) return;
+    if (!session || session.experiment_id !== selected || !controlled) return;
     const controller = new AbortController();
     const read = () =>
-      request<Observation | null>("/api/sessions/current/state", {
+      request<RobotObservation | null>("/api/sessions/current/state", {
         signal: controller.signal,
       })
         .then((s) => {
@@ -183,7 +196,7 @@ function App() {
       controller.abort();
       clearInterval(timer);
     };
-  }, [session?.id, selected, panda]);
+  }, [session?.id, selected, controlled]);
   useEffect(() => {
     historyReplace(selected);
   }, [selected]);
@@ -258,9 +271,9 @@ function App() {
   }
   async function command(action: string, extra = {}, id = session?.id) {
     if (!id) throw new Error("请先打开交互实验");
-    const result = await request<Observation>(
+    const result = await request<RobotObservation>(
       "/api/sessions/current/commands",
-      post({ session_id: id, action, settings, ...extra }),
+      post({ session_id: id, action, settings: humanoid ? settings.humanoid : settings, ...extra }),
     );
     actions.current.push({
       action,
@@ -278,7 +291,7 @@ function App() {
         post({ experiment_id: lesson!.experiment_id }),
       );
       setSystem((prev) => (prev ? { ...prev, session: created } : prev));
-      if (!panda) return;
+      if (!controlled) return;
       for (let i = 0; i < 100; i++) {
         await new Promise((resolve) => setTimeout(resolve, 500));
         const info = await request<System>("/api/system");
@@ -306,7 +319,7 @@ function App() {
         setMotionJoint(1);
         setHistory([]);
       }
-      if (action === "gravity-release" || action === "gravity-hold") {
+      if ((action === "gravity-release" || action === "gravity-hold") && "compensation" in result) {
         setSettings({ ...defaults(mode), compensation: result.compensation });
         setHistory([]);
       }
@@ -514,7 +527,7 @@ function App() {
           )}
           <div className="lesson-content">
             <section className="lab" aria-label="交互实验">
-              <div className="experiment-workspace" data-has-inspector={panda}>
+              <div className="experiment-workspace" data-has-inspector={controlled}>
                 <div className="panel viewer-panel">
                   <div className="panel-heading">
                     <div>
@@ -581,6 +594,7 @@ function App() {
                         <h3>
                           {panda
                             ? "Panda 机械臂实验工作台"
+                            : humanoid ? "G1 人形机器人实验工作台"
                             : "基础物理实验工作台"}
                         </h3>
                         <p>
@@ -593,30 +607,32 @@ function App() {
                     )}
                   </div>
                   <p className="viewer-caption">
-                    {panda
+                    {controlled
                       ? GEOMETRIC.includes(mode)
                         ? "几何实验 · 直接更新构型与运动学观测"
                         : "动力学实验 · 执行器、重力与接触共同决定运动"
                       : "使用官方窗口中的暂停、步进和初态恢复控件"}
-                    {panda && <span>高级面板可从查看器 View 菜单展开</span>}
+                    {controlled && <span>高级面板可从查看器 View 菜单展开</span>}
                   </p>
                 </div>
-                {panda && (
+                {controlled && (
                   <aside
                     className="experiment-inspector"
                     aria-label="实验观测与参数"
                   >
                     {mode === "jacobian" && controlPanel}
-                    <Readings
-                      state={latest}
+                    {humanoid ? <HumanoidReadings state={humanoidLatest} live={!!state} /> : <Readings
+                      state={pandaLatest ?? undefined}
                       mode={mode}
                       live={!!state}
                       joint={motionJoint}
-                    />
+                    />}
                     {mode !== "jacobian" && controlPanel}
                   </aside>
                 )}
               </div>
+              {humanoid && <HumanoidActions mode={mode} ready={ready} busy={!!busy}
+                paused={!!state?.paused} act={action => void control(action)} />}
               {panda && (
                 <ExperimentActions
                   mode={mode}
@@ -626,12 +642,12 @@ function App() {
                   act={(action) => void control(action)}
                 />
               )}
-              {panda && (
+              {controlled && (
                 <div className="panel live-chart">
                   <div className="panel-heading">
                     <h3>交互过程记录</h3>
                     <div className="toolbar">
-                      {mode !== "grasp" && mode !== "jacobian" && (
+                      {panda && mode !== "grasp" && mode !== "jacobian" && (
                         <select
                           aria-label="曲线关节"
                           value={joint}
@@ -653,14 +669,14 @@ function App() {
                       </button>
                     </div>
                   </div>
-                  <Chart
+                  {humanoid ? <HumanoidChart samples={history} /> : <Chart
                     samples={history.map((s) => ({
                       ...s,
-                      cube_height: s.cube_position[2],
+                      cube_height: "cube_position" in s ? s.cube_position[2] : 0,
                     }))}
                     joint={joint}
                     mode={mode}
-                  />
+                  />}
                   <p className="panel-note">
                     记录当前交互会话最近的观测；暂停与恢复初态可用于对照。
                   </p>
@@ -685,7 +701,7 @@ function App() {
                           "/api/runs",
                           post({
                             experiment_id: lesson!.experiment_id,
-                            settings: panda ? settings : null,
+                            settings: humanoid ? settings.humanoid : panda ? settings : null,
                           }),
                         ),
                       );
@@ -700,12 +716,12 @@ function App() {
               </p>
               {run && (
                 <>
-                  <Chart
+                  {humanoid ? <HumanoidChart samples={run.samples} /> : <Chart
                     samples={run.samples}
                     joint={joint}
                     mode={mode}
                     unit={run.experiment.observable_unit}
-                  />
+                  />}
                   <div className="metrics">
                     {Object.entries(run.metrics).map(([key, value]) => (
                       <div key={key}>

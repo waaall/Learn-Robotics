@@ -9,10 +9,15 @@ from mujoco.experimental.studio import messages, sim, step_control
 from .panda import PandaController
 
 
-class PandaStudio(step_control.StepControl):
-    def __init__(self, model, data, mode: str, bridge: Path):
+class CourseStudio(step_control.StepControl):
+    def __init__(self, model, data, mode: str, bridge: Path, adapter="panda"):
         super().__init__()
-        self.controller = PandaController(model, data, mode)
+        self.adapter = adapter
+        if adapter == "humanoid":
+            from .humanoid import HumanoidController
+            self.controller = HumanoidController(model, data, mode)
+        else:
+            self.controller = PandaController(model, data, mode)
         self.bridge = bridge
         self.command_id = None
         self.command_error = None
@@ -48,6 +53,11 @@ class PandaStudio(step_control.StepControl):
         self.command_id, self.command_error = request["id"], None
         try:
             action = request["action"]
+            common = {"reset", "configure", "pause", "step"}
+            specific = ({"walk", "walk-stop", "push"} if self.adapter == "humanoid" else
+                        {"gravity-release", "gravity-hold", "jacobian-run", "jacobian-stop", "trajectory", "grasp"})
+            if action not in common | specific:
+                raise ValueError("该课程不支持此操作")
             if action == "reset":
                 self.controller.reset()
             elif action == "configure":
@@ -69,6 +79,13 @@ class PandaStudio(step_control.StepControl):
                 self.controller.start_motion()
             elif action == "grasp":
                 self.controller.start_grasp()
+            elif action in {"walk", "walk-stop", "push"}:
+                if not self.controller.mode.startswith("g1-"):
+                    raise ValueError("该操作仅支持人形课程")
+                self.controller.configure(request.get("settings", {}))
+                {"walk": self.controller.start_walk, "walk-stop": self.controller.stop_walk,
+                 "push": self.controller.push}[action]()
+                self.step_control.set_pause_state(sim.PauseState.UNPAUSED)
             elif action == "pause":
                 paused = request.get("paused", True)
                 self.step_control.set_pause_state(sim.PauseState.NORMAL_PAUSED if paused else sim.PauseState.UNPAUSED)
@@ -106,3 +123,7 @@ class PandaStudio(step_control.StepControl):
             if now - self.last_write >= 0.1:
                 self._write()
         time.sleep(0.005)
+
+
+# 既有 Panda 插件调用保留兼容入口；课程调度按 adapter 选择控制器。
+PandaStudio = CourseStudio

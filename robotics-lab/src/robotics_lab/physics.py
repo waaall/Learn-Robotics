@@ -17,6 +17,19 @@ def load_model(experiment: Experiment):
     if mujoco.__version__ != MUJOCO_VERSION or mujoco.mj_versionString() != MUJOCO_VERSION:
         raise RuntimeError(f"物理实验要求 MuJoCo {MUJOCO_VERSION}")
     spec = mujoco.MjSpec.from_file(str(experiment.model_path))
+    if experiment.adapter == "humanoid":
+        for mesh in spec.meshes:
+            mesh.file = str(experiment.model_path.parent / "g1" / "meshes" / Path(mesh.file).name)
+        # 使用官方 ViewerApp 支持的 home camera，跟随全身质心观察行走。
+        offset = np.array([1.6, -2.2, 1.0])
+        zaxis = offset / np.linalg.norm(offset)
+        xaxis = np.cross([0, 0, 1], zaxis)
+        xaxis /= np.linalg.norm(xaxis)
+        yaxis = np.cross(zaxis, xaxis)
+        quaternion = np.zeros(4)
+        mujoco.mju_mat2Quat(quaternion, np.column_stack((xaxis, yaxis, zaxis)).ravel())
+        spec.body("pelvis").add_camera(name="course_follow", mode=mujoco.mjtCamLight.mjCAMLIGHT_TRACKCOM,
+                                       pos=offset.tolist(), quat=quaternion.tolist())
     if experiment.adapter == "panda":
         # MjSpec 中显式解析 include 内的网格资源，保持上游模型文件原样。
         for mesh in spec.meshes:
@@ -30,6 +43,8 @@ def load_model(experiment: Experiment):
                           fromto=start + end, size=[0.002]*3, rgba=color)
     spec.add_key(name="experiment_initial", time=0, qpos=list(experiment.qpos), ctrl=list(experiment.initial_ctrl))
     model = spec.compile()
+    if experiment.adapter == "humanoid":
+        model.vis.global_.cameraid = model.camera("course_follow").id
     data = mujoco.MjData(model)
     key = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_KEY, "experiment_initial")
     mujoco.mj_resetDataKeyframe(model, data, key)
@@ -40,9 +55,12 @@ def load_model(experiment: Experiment):
 def simulate(experiment: Experiment, duration: float | None = None, settings: dict | None = None) -> dict:
     model, data = load_model(experiment)
     duration = experiment.duration if duration is None else duration
-    if experiment.adapter == "panda":
-        from .panda import simulate_panda
-        result = simulate_panda(experiment, model, data, duration, settings)
+    if experiment.adapter in {"panda", "humanoid"}:
+        if experiment.adapter == "panda":
+            from .panda import simulate_panda as simulate_robot
+        else:
+            from .humanoid import simulate_humanoid as simulate_robot
+        result = simulate_robot(experiment, model, data, duration, settings)
         result.update(experiment=experiment.public(), duration=duration,
                       created_at=datetime.now(timezone.utc).isoformat(),
                       runtime={"mujoco": mujoco.__version__, "system": platform.system(), "timestep": model.opt.timestep},

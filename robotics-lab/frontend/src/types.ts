@@ -88,10 +88,14 @@ export type VelocityComparison = {
   error_norm: number;
 };
 export type Sample = {
+  base_position?: number[];
+  command?: number[];
+  body_velocity?: number[];
   time: number;
   value?: number;
   joints?: number[];
   reference_joints?: number[];
+  target_joints?: number[];
   joint_error?: number;
   cube_height?: number;
   cube_position?: number[];
@@ -102,11 +106,12 @@ export type Sample = {
 export type Run = {
   id: string;
   samples: Sample[];
-  state?: Observation;
+  state?: Observation | HumanoidObservation;
   metrics: Record<string, number>;
   experiment: { observable_name: string; observable_unit: string };
 };
 export type Settings = {
+  humanoid?: HumanoidSettings;
   joints: number[];
   target: number[];
   gripper_width: number;
@@ -132,6 +137,10 @@ export const canonicalLessonId = (id: string) =>
   id === "panda-fk" ? "panda-structure" : id;
 export function defaults(mode = "structure"): Settings {
   return {
+    ...(mode.startsWith("g1-") ? { humanoid: {
+      squat: 0, lean: 0, shift: 0, duration: 3, command: [0.3, 0, 0],
+      friction: 1, push_force: 20, push_duration: 0.4, payload: 0,
+    } } : {}),
     joints: [...HOME],
     target: [0.45, 0.12, 0.42],
     gripper_width: 0.08,
@@ -152,3 +161,18 @@ export function defaults(mode = "structure"): Settings {
   };
 }
 export const num = (value: number, digits = 4) => value.toFixed(digits);
+
+export type HumanoidSettings = {
+  squat: number; lean: number; shift: number; duration: number; command: number[];
+  friction: number; push_force: number; push_duration: number; payload: number;
+};
+export type HumanoidObservation = {
+  robot: "g1"; time: number; phase: string; paused: boolean; age_seconds: number; session_id: string;
+  joints: number[]; joint_names: string[]; reference_joints: number[]; target_joints: number[];
+  velocities: number[]; actuator_torque: number[];
+  base_position: number[]; base_quaternion: number[]; base_velocity: number[]; body_velocity: number[];
+  com: number[]; support_polygon: number[][]; support_margin_m: number | null; foot_forces: number[][];
+  tilt_rad: number; max_tilt_rad: number; contacts: number; fallen: boolean; displacement_m: number;
+  command: number[]; requested_command: number[]; policy_active: boolean; policy_observation: number[];
+  policy_action: number[]; push_force_N: number; settings: HumanoidSettings;
+};

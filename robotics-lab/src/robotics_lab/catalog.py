@@ -54,6 +54,16 @@ def catalog() -> dict[str, Experiment]:
                         "observable_name": "关节 1 角度", "observable_unit": "rad",
                         "explanation": lesson["summary"], "observations": lesson["observations"],
                         "adapter": "panda", "mode": lesson["mode"]})
+    from .humanoid_curriculum import HUMANOID_LESSONS
+    from .humanoid import HOME as G1_HOME
+    for lesson in HUMANOID_LESSONS:
+        entries.append({"id": lesson["id"], "title": lesson["title"], "topic": "人形机器人基础",
+                        "robot": "Unitree G1（12 驱动关节）", "summary": lesson["summary"],
+                        "model": "g1_course.xml", "qpos": [0, 0, 0.793, 1, 0, 0, 0, *G1_HOME.tolist()],
+                        "initial_ctrl": [0.0]*len(G1_HOME), "duration": lesson["duration"],
+                        "observable_index": 2, "observable_name": "基座高度", "observable_unit": "m",
+                        "explanation": lesson["summary"], "observations": lesson["observations"],
+                        "adapter": "humanoid", "mode": lesson["mode"]})
     for entry in entries:
         entry["qpos"] = tuple(entry["qpos"])
         entry["observations"] = tuple(entry["observations"])

@@ -1,1 +1,7 @@
 *.sh text eol=lf
+# 保留上游模型与策略资源的原始字节，使跨平台 SHA-256 校验一致。
+src/robotics_lab/assets/models/g1/** -text
+src/robotics_lab/assets/models/g1/upstream.json text eol=lf
+# 上游参考文件保留原始空白。
+src/robotics_lab/assets/models/g1/source_config.yaml -whitespace
+src/robotics_lab/assets/models/g1/source_deploy.py -whitespace

@@ -91,6 +91,7 @@ PANDA_LESSONS = [
 
 def courses():
     from .catalog import catalog
+    from .humanoid_curriculum import HUMANOID_LESSONS
     experiments = catalog()
     physics_lessons = []
     for identifier in ("pendulum", "drop-ball"):
@@ -107,6 +108,10 @@ def courses():
     return [{"id": "panda-basics", "title": "Panda 机械臂基础", "subtitle": "从关节构型到接触抓取",
              "robot": "Franka Emika Panda", "level": "基础 → 进阶", "description": "原理讲解与交互实验并行，逐节研究机械臂的几何、动力学和控制。",
              "lessons": deepcopy(PANDA_LESSONS)},
+            {"id": "humanoid-basics", "title": "人形机器人：站立、平衡与学习控制",
+             "subtitle": "浮动基座、足底接触与学习策略", "robot": "Unitree G1（12 驱动关节）",
+             "level": "基础 → 学习控制", "description": "连续运动、真实接触与可观察的学习策略执行。",
+             "lessons": deepcopy(HUMANOID_LESSONS)},
             {"id": "physics-basics", "title": "基础物理实验", "subtitle": "动力学与接触的基本现象",
              "robot": "基础机构", "level": "基础", "description": "通过单摆与落球建立运动、能量和接触的观察方法。",
              "lessons": physics_lessons}]

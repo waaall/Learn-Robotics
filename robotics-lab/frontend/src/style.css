@@ -1261,3 +1261,17 @@ summary {
     scroll-behavior: auto !important;
   }
 }
+/* G1 实验沿用现有工作区，状态与控制按人形课程独立显示。 */
+.g1-controls, .g1-readings { padding: 16px; }
+.g1-field { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 12px 0; font-size: 13px; }
+.g1-field input { width: 92px; min-width: 0; padding: 7px 8px; border: 1px solid #d5ddd9; border-radius: 5px; background: white; color: inherit; font: inherit; }
+.g1-actions { display: flex; flex-wrap: wrap; gap: 8px; padding: 14px; }
+.g1-metrics { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 14px; margin: 16px 0; }
+.g1-metrics dt, .g1-vectors dt { color: #6c7675; font-size: 12px; }
+.g1-metrics dd { font-size: 21px; font-variant-numeric: tabular-nums; margin: 4px 0 0; }
+.g1-vectors dd { font-size: 12px; margin: 4px 0 12px; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+.g1-support svg { display: block; width: 100%; max-height: 210px; background: #f5f8f7; border-radius: 6px; }
+.g1-support text { font-size: 11px; fill: #65736e; }
+.g1-array { font: 11px/1.7 monospace; overflow-wrap: anywhere; }
+.g1-table-scroll { max-width: 100%; overflow-x: auto; }
+.g1-readings details { margin-top: 16px; font-size: 12px; }

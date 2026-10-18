@@ -18,7 +18,7 @@ from robotics_lab.physics import load_model, simulate
 class CourseTests(unittest.TestCase):
     def test_course_lessons_resolve_and_have_complete_content(self):
         items = courses()
-        self.assertEqual([len(c["lessons"]) for c in items], [7, 2])
+        self.assertEqual([len(c["lessons"]) for c in items], [7, 5, 2])
         identifiers = []
         for course in items:
             for lesson in course["lessons"]:

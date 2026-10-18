@@ -22,13 +22,14 @@ def main() -> None:
     model, data = load_model(experiment)
     config = viewer_protocol.ViewerConfig(title="Robotics Lab", gfx="web", http_port=args.port)
     plugins = [step_control.StepControl(), sim_history.SimHistory()]
-    if experiment.adapter == "panda":
-        from .studio import PandaStudio
+    controlled = experiment.adapter in {"panda", "humanoid"}
+    if controlled:
+        from .studio import CourseStudio
         if args.bridge is None:
-            parser.error("Panda 课程需要 --bridge")
-        plugins = [PandaStudio(model, data, experiment.mode, args.bridge)]
+            parser.error("交互课程需要 --bridge")
+        plugins = [CourseStudio(model, data, experiment.mode, args.bridge, adapter=experiment.adapter)]
     ui_config = viewer_app.ViewerAppConfig(
-        show_options=experiment.adapter != "panda", show_inspector=experiment.adapter != "panda")
+        show_options=not controlled, show_inspector=not controlled)
     launch_web.run(config, model=model, data=data,
                    viewer_plugins=[viewer_app.ViewerApp(ui_config)],
                    sim_plugins=plugins)
