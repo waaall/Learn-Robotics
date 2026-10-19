@@ -1,10 +1,14 @@
 *
 !Dockerfile
+!lab.sh
 !requirements.lock
-!requirements-test.lock
+!frontend/
+!frontend/**
 !src/
 !src/**
 !tests/
 !tests/**
 **/__pycache__/
 **/*.pyc
+frontend/node_modules/
+frontend/dist/

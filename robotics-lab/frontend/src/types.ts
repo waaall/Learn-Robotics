@@ -1,3 +1,4 @@
+// 网页课程、观测与会话协议；内部查看器端口不属于公共接口。
 export type Lesson = {
   id: string;
   experiment_id: string;
@@ -26,8 +27,7 @@ export type Session = {
   id: string;
   experiment_id: string;
   status: string;
-  port: number;
-  url?: string | null;
+  url: string;
   error: string | null;
 };
 export type System = {

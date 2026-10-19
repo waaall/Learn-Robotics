@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 5
 requires-python = ">=3.12, <3.14"
 
 [[package]]
@@ -306,25 +306,22 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "fastapi" },
+    { name = "httpx" },
     { name = "mujoco" },
     { name = "numpy" },
     { name = "uvicorn" },
-]
-
-[package.optional-dependencies]
-dev = [
-    { name = "httpx" },
+    { name = "websockets" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "fastapi", specifier = ">=0.115,<1" },
-    { name = "httpx", marker = "extra == 'dev'", specifier = ">=0.28,<1" },
+    { name = "httpx", specifier = ">=0.28,<1" },
     { name = "mujoco", specifier = "==3.16.0" },
     { name = "numpy", specifier = ">=2,<3" },
     { name = "uvicorn", specifier = ">=0.34,<1" },
+    { name = "websockets", specifier = ">=17,<18" },
 ]
-provides-extras = ["dev"]
 
 [[package]]
 name = "starlette"

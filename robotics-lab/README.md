@@ -2,31 +2,49 @@
 
 机器人交互实验室。以“课程 → 课时 → 实验”组织原理讲解、公式、交互仿真和结果分析。整体产品需求见 [整体需求](docs/demand/overall-demand.md)，课程实现见 [课程与 Panda 适配](docs/design/courses.md)。项目与 `experiments/` 独立，不依赖其硬件、模型、策略、数据或运行环境。
 
-## Docker 启动（推荐）
+## 支持平台与快速启动
 
-Windows/macOS 安装并启动 Docker Desktop，使用 Linux 容器；Linux 安装 Docker Engine 与 Compose 插件。当前交付包为 `linux/amd64`，适用于 Intel/AMD 桌面电脑；容器内统一使用 Linux Python 3.12 和 MuJoCo 3.16.0。宿主机无需安装 Python、Node.js 或手动配置 WSL Ubuntu。ARM64 构建配置保留，Apple Silicon 包的构建与验收后续在 macOS 完成，当前未交付 ARM64 包。
+以下为完整功能的部署目标，实际测试结果见 [跨平台验证记录](docs/validation/deployment.md)：
 
-从源码首次构建并启动：
+| 目标 | 部署方式 |
+| --- | --- |
+| WSL2、Linux AMD64/ARM64 | 原生 Python 与浏览器，共用 `lab.sh` |
+| Apple Silicon macOS | 原生 ARM64 Python 与浏览器，共用 `lab.sh` |
+| Docker Linux AMD64/ARM64 | 单应用镜像；Windows/macOS 使用 Docker Desktop，Linux 使用 Docker Engine |
 
-```powershell
-# Windows PowerShell，在 robotics-lab 目录执行
-./run-docker.ps1 build
-./run-docker.ps1
-```
+Windows 原生 Python、WSL1 和 Intel Mac 原生部署不属于支持目标。WSL2 内使用 Linux 工具链。所有目标共用 FastAPI 应用、MuJoCo 3.16.0、模型资源、同源查看器代理及跨源隔离配置，不依赖 `experiments/`。平台差异仅用于原生虚拟环境隔离。
+
+### 原生部署：WSL2 / Linux / Apple Silicon Mac
+
+准备 uv 0.13+（[安装说明](https://docs.astral.sh/uv/getting-started/installation/)）和 Node.js 22.12+（推荐 24 LTS）。在本目录执行相同命令：
 
 ```bash
-# Linux / macOS，在 robotics-lab 目录执行
-bash run-docker.sh build
-bash run-docker.sh
+bash lab.sh setup
+bash lab.sh start
 ```
 
-打开 <http://localhost:18320>。默认进入 Panda 课程；通过“课程目录”选择课时，再打开交互实验。API、官方查看器、模型资源和 WebSocket 使用同一个入口端口。
+打开 <http://localhost:18320>。`setup` 按 `uv.lock` 创建本平台 Python 3.12 环境、按前端锁文件安装并构建界面，最后检查官方查看器组件。首次安装需联网，模型和策略已随源码提供。运行时不需要 Node 或外部 CDN。服务在前台运行，按 Ctrl+C 结束服务和查看器。
 
-已有离线交付 ZIP 时，解压后运行脚本的 `load` 操作，再正常启动，详见 [离线包使用与数据迁移](docs/deployment/quick-start.md)。源码构建需要联网；离线包导入后不需要下载依赖或模型。
+环境保存在 `.venv/<系统>-<架构>/`，缓存保存在 `.cache/`。不同操作系统或架构不共享 Python 虚拟环境。WSL2 建议将仓库放在 Linux 文件系统；无需在 Windows 安装 Python。可以从 Windows Terminal 进入 WSL2 后执行上述命令，不再维护另一套 PowerShell Python 启动流程。
 
-脚本支持 `build`、`load`、`up`（默认）、`stop`、`logs` 和 `status`。停止会保留数据卷。复制 `.env.example` 为 `.env` 可调整端口和数据目录。默认只向本机开放，单用户使用；远程部署需要 HTTPS、认证及浏览器跨源隔离配置。
+### Docker 部署
 
-发布结构、双架构构建和打包见 [Docker 发布设计](docs/design/docker.md)，实际验证状态见 [Docker 验证记录](docs/validation/docker.md)。原有 Python/WSL 源码启动脚本保留，适合开发调试。
+安装并启动使用 Linux 容器的 Docker Desktop，或安装 Docker Engine 与 Compose v2+。所有宿主机使用相同命令：
+
+```shell
+docker compose -f compose.yaml -f compose.build.yaml build
+docker compose up -d --wait --remove-orphans
+```
+
+打开 <http://localhost:18320>。构建默认使用 Docker 引擎架构；Apple Silicon 对应 `linux/arm64`，Intel/AMD Linux 容器对应 `linux/amd64`，无需修改部署文件。宿主机无需 Python、Node 或单独安装 WSL 发行版。
+
+```shell
+docker compose ps
+docker compose logs --tail 100 -f
+docker compose down
+```
+
+停止保留数据卷。离线包导入、数据备份与多架构构建见 [交付与迁移](docs/deployment/quick-start.md) 和 [Docker 构建设计](docs/design/docker.md)。
 
 ## 当前能力
 
@@ -45,52 +63,39 @@ Panda 资源固定于官方 Menagerie 提交 `62ab00f2bc44f6f20c1c9b7a13f3fb1dd4
 
 尚未实现任意模型组合、避障规划、策略训练、VLA、完整交互回放和学习账户。人形策略不包含跌倒起身，结果对应具体模型及配置；改变物理条件后可能失败。交互观测导出保存网页操作与采样，不保证复现官方查看器内的全部编辑；独立验证始终从预设初态计算，不读取当前交互修改。
 
-## 运行环境
+## 配置与验证
 
-Docker 内由 Linux Python 计算，浏览器渲染三维场景。以下为不使用 Docker 时的源码运行方式；完整官方 WebViewer 使用 Linux/WSL 路线。
+可复制 `.env.example` 为 `.env` 后调整配置。原生脚本由 uv 加载 `.env`，Docker Compose 读取同一份部署参数；已有进程环境变量优先。命令行 `start --host ... --port ...` 可覆盖原生网络配置。
 
-**MuJoCo 3.16.0 原生 Windows 安装包不支持官方 WebViewer。** 上游构建配置在 Windows 跳过 `headless_ui` 和 `state_payload`，且 Windows wheel 未分发浏览器客户端。Windows 仍可运行目录、数值验证和结果查看。[上游构建配置](https://github.com/google-deepmind/mujoco/blob/3.16.0/python/mujoco/experimental/studio/web/CMakeLists.txt)
+| 参数 | 原生部署 | Docker 部署 |
+| --- | --- | --- |
+| `ROBOTICS_LAB_HOST` | 服务监听地址，默认 `127.0.0.1` | 宿主机端口绑定地址，默认 `127.0.0.1` |
+| `ROBOTICS_LAB_PORT` | 应用端口，默认 `18320` | 宿主机映射端口，默认 `18320`；容器内固定为 `8000` |
+| `ROBOTICS_LAB_DATA_DIR` | 记录与日志目录，默认 `.runtime`；相对项目解析 | 不读取宿主机该值，数据使用独立命名卷 |
+| `ROBOTICS_LAB_TAG` | 不使用 | 应用镜像标签 |
 
-准备 Python 3.12、uv 和 Node.js 22.12+ 或 24。Python 与前端各有独立锁文件。不同系统使用独立虚拟环境，不复制或共享虚拟环境目录。
-
-## Windows：构建界面与验证数值实验
-
-在本目录执行：
-
-```powershell
-./setup.ps1
-./run.ps1
-```
-
-打开 <http://localhost:8000>。Windows 下交互仿真入口根据组件检查结果禁用；可以运行独立数值验证。
-
-```powershell
-.venv/Scripts/python.exe -m robotics_lab doctor
-.venv/Scripts/python.exe -m unittest discover -s tests -v
-.venv/Scripts/python.exe -m robotics_lab simulate drop-ball --output .runtime/drop-ball.json
-```
-
-## Ubuntu / WSL：官方 WebViewer 运行环境
-
-在 Ubuntu 中进入本目录，使用 Linux 的 uv。前端可使用 Windows 已构建的 `frontend/dist`，也可以在 Linux 使用 Node.js 构建。
+页面、API、官方客户端、模型与 WebSocket 均从同一端口访问。查看器子进程内部使用动态回环端口，不再向前端暴露或配置查看器端口、URL。原生部署与 Docker 默认使用各自独立的数据存储；课程完成状态仍保存在浏览器。
 
 ```bash
-export UV_PROJECT_ENVIRONMENT="$PWD/.venv-linux"
-export UV_CACHE_DIR="$PWD/.cache/uv-linux"
-uv sync --locked --extra dev --python 3.12
-uv run --locked python -m robotics_lab doctor
-bash run-linux.sh
+# 原生：组件检查、全部回归测试、已启动服务的协议验收
+bash lab.sh doctor
+bash lab.sh test
+bash lab.sh smoke
+
+# 覆盖端口；验收时使用相同地址
+bash lab.sh start --port 18321
+bash lab.sh smoke --url http://127.0.0.1:18321
 ```
 
-Windows 浏览器访问 <http://localhost:8000>。如该端口已被其他进程占用，可执行 `bash run-linux.sh 8001`。查看器使用单独的动态端口；访问其他 Linux 主机时，应用端口与查看器端口都需要可达，当前尚未提供统一端口代理。
+```shell
+# Docker：使用相同的 Python 命令和验收实现
+docker compose exec lab python -m robotics_lab doctor
+docker compose exec lab python -m robotics_lab smoke
+```
 
-本机 Ubuntu 的依赖已安装后，也可在 Windows PowerShell 中进入本目录，执行 `./run-wsl.ps1`，默认使用 WSL 的默认发行版；也可用 `./run-wsl.ps1 -Port 8001 -Distribution Ubuntu-22.04` 指定端口和发行版。发行版名称以 `wsl --list --verbose` 为准。该脚本直接运行已安装的 Linux 虚拟环境，运行时不依赖 Windows 的 Python。
+`doctor` 检查 `headless_ui`、`state_payload`、JS/WASM 和查看器导入，缺件时返回非零状态码。`smoke` 在目录中选择代表实验，检查 HTTP、WASM 完整长度、模型分块、WebSocket、暂停、单步和恢复；会创建运行记录，已有会话时拒绝验收。该命令不替代浏览器实际三维渲染检查。
 
-当前电脑已在 `.venv-linux` 安装并验证 Linux 依赖。为完成本次安装而下载的 Linux uv 位于 `.cache/linux-tools/bin/uv`；若尚未将 uv 安装到 Ubuntu 的 PATH，可在上述安装命令中使用这个路径。缓存和虚拟环境均不纳入版本控制，新机器需重新安装。
-
-`doctor` 检查扩展模块和浏览器资源。检查通过后仍需启动查看器，验证浏览器渲染及交互。网页内可启动、结束一个查看器会话；应用正常关闭时会清理其子进程。
-
-官方查看器包含左右操作面板，建议在桌面浏览器中使用；窄窗口可以通过“独立窗口”入口打开完整查看器。
+默认本机、单用户、单会话。远程部署需另行配置 HTTPS 和认证，保留 COOP/COEP；本次未增加多人会话或远程安全部署。运行结构与上游适配依据见 [统一部署设计](docs/design/deployment.md)。
 
 ## 前端开发
 
@@ -100,7 +105,7 @@ npm run dev --prefix frontend
 npm run build --prefix frontend
 ```
 
-开发页面将 `/api` 请求转发到本机 8000 端口。构建后由本地应用提供页面。页面不使用远程字体或运行时 CDN。
+先启动应用服务，再启动 Vite。开发页面将 API、查看器资源和 WebSocket 转发到本机应用端口（默认 18320，也读取项目 `.env`），并提供跨源隔离响应头。构建后由同一应用提供页面。页面不使用远程字体或运行时 CDN。
 
 ## 文件职责
 
@@ -109,6 +114,8 @@ npm run build --prefix frontend
 | `src/robotics_lab/assets` | 基础实验目录、Panda 上游模型与课程场景 |
 | `src/robotics_lab/curriculum.py` | 课程、课时讲解与实验引用 |
 | `src/robotics_lab/physics.py` | 初态加载和独立数值计算 |
+| `src/robotics_lab/config.py` | 各部署共用的应用配置 |
+| `src/robotics_lab/gateway.py` | 官方查看器 HTTP/WebSocket 代理与跨源隔离 |
 | `src/robotics_lab/diagnostics.py` | 安装包组件与资源检查 |
 | `src/robotics_lab/viewer.py` | 官方 WebViewer 适配 |
 | `src/robotics_lab/panda.py` | Panda 专属运动学、控制、观测与接触任务 |
@@ -117,6 +124,9 @@ npm run build --prefix frontend
 | `src/robotics_lab/studio.py` | 仿真线程中的课程命令、实时步进和观测发布 |
 | `src/robotics_lab/sessions.py` | 查看器进程生命周期 |
 | `src/robotics_lab/api.py` | 目录、数值运行、记录和会话接口 |
+| `lab.sh` | WSL2、Linux、Apple Silicon Mac 原生环境与启动 |
+| `compose.yaml`、`Dockerfile` | 同一应用的单服务、多架构容器部署 |
+| `src/robotics_lab/smoke.py` | 原生和 Docker 共用的协议验收 |
 | `frontend` | 实验选择、说明、仿真窗口与独立结果展示 |
 | `.runtime` | 本地生成的记录与会话日志，不纳入版本控制 |
 

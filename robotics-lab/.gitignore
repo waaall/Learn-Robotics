@@ -1,6 +1,7 @@
 .runtime/
-.venv-linux/
+.venv*/
 .cache/
+node_modules/
 frontend/dist/
 .playwright-cli/
 output/playwright/

@@ -14,6 +14,7 @@ from uuid import uuid4
 
 from .catalog import get_experiment
 from .diagnostics import viewer_capability
+from .config import VIEWER_URL
 
 
 @dataclass
@@ -28,10 +29,8 @@ class Session:
 
 
 class SessionManager:
-    def __init__(self, directory: Path, *, viewer_port: int = 0, viewer_url: str | None = None):
+    def __init__(self, directory: Path):
         self.directory = directory
-        self.viewer_port = viewer_port
-        self.viewer_url = viewer_url
         self.session: Session | None = None
         self.lock = threading.RLock()
         self._state_cache: dict | None = None
@@ -45,21 +44,25 @@ class SessionManager:
             if self.session and self.session.process.poll() is None:
                 raise ValueError("已有仿真会话，请先关闭当前会话")
             self.directory.mkdir(parents=True, exist_ok=True)
-            port = self.viewer_port
-            if not port:
-                with socket.socket() as sock:
-                    sock.bind(("127.0.0.1", 0))
-                    port = sock.getsockname()[1]
+            with socket.socket() as sock:
+                sock.bind(("127.0.0.1", 0))
+                port = sock.getsockname()[1]
             identifier = str(uuid4())
             log_path = self.directory / f"{identifier}.log"
             command = [sys.executable, "-m", "robotics_lab.viewer", "--experiment", experiment_id, "--port", str(port)]
             command += ["--bridge", str(log_path.with_suffix(""))]
-            flags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
             with log_path.open("wb") as log:
-                process = subprocess.Popen(command, stdout=log, stderr=log, creationflags=flags)
+                process = subprocess.Popen(command, stdout=log, stderr=log)
             self.session = Session(identifier, experiment_id, port, process, time.monotonic(), log_path)
             self._state_cache = None
             return self.status()
+
+    def active_port(self) -> int | None:
+        """代理只读取当前存活进程的内部端口，不在事件循环中执行就绪探测。"""
+        with self.lock:
+            if self.session and self.session.process.poll() is None:
+                return self.session.port
+            return None
 
     def status(self) -> dict | None:
         with self.lock:
@@ -77,17 +80,21 @@ class SessionManager:
                 status = "ready"
             else:
                 try:
-                    with urlopen(f"http://127.0.0.1:{session.port}/", timeout=0.5) as response:
-                        if response.status == 200:
+                    # 官方服务先监听，再发布模型并重建服务。仅 HTTP 首页可读时
+                    # 尚未完成初始化；模型字节就绪后才允许浏览器开始资源加载。
+                    with urlopen(f"http://127.0.0.1:{session.port}/model?total_bytes", timeout=0.5) as response:
+                        size = json.loads(response.read()).get("total_bytes", 0)
+                        if response.status == 200 and isinstance(size, int) and size > 0:
                             session.ready = True
                             status = "ready"
-                except (URLError, TimeoutError, OSError):
-                    if time.monotonic() - session.started > 45:
-                        status, error = "failed", "查看器启动超时；请检查会话日志与运行组件。"
-                        self._terminate(session)
-                        code = session.process.poll()
-            return {"id": session.id, "experiment_id": session.experiment_id, "port": session.port,
-                    "url": self.viewer_url, "status": status, "error": error, "exit_code": code}
+                except (URLError, TimeoutError, OSError, json.JSONDecodeError):
+                    pass
+                if not session.ready and time.monotonic() - session.started > 45:
+                    status, error = "failed", "查看器启动超时；请检查会话日志与运行组件。"
+                    self._terminate(session)
+                    code = session.process.poll()
+            return {"id": session.id, "experiment_id": session.experiment_id,
+                    "url": VIEWER_URL, "status": status, "error": error, "exit_code": code}
 
     @staticmethod
     def _terminate(session: Session) -> None:

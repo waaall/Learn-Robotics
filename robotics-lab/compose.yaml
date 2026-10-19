@@ -1,13 +1,14 @@
+# 所有 Docker 宿主机共用同一个应用服务；离线包也使用此文件。
 name: robotics-lab
 services:
-  api:
-    image: robotics-lab-api:${ROBOTICS_LAB_TAG:-0.1.0}
-    environment:
-      ROBOTICS_LAB_DATA_DIR: /var/lib/robotics-lab
-      ROBOTICS_LAB_VIEWER_PORT: '8081'
-      ROBOTICS_LAB_VIEWER_URL: /viewer/
+  lab:
+    image: robotics-lab:${ROBOTICS_LAB_TAG:-0.1.0}
+    # 镜像由源码构建或离线导入，启动时不访问未发布的默认仓库。
+    pull_policy: never
+    ports:
+      - '${ROBOTICS_LAB_HOST:-127.0.0.1}:${ROBOTICS_LAB_PORT:-18320}:8000'
     volumes:
-      - ${ROBOTICS_LAB_DATA_DIR:-robotics-lab-data}:/var/lib/robotics-lab
+      - robotics-lab-data:/var/lib/robotics-lab
     init: true
     read_only: true
     tmpfs:
@@ -16,21 +17,5 @@ services:
     security_opt: [no-new-privileges:true]
     restart: unless-stopped
     stop_grace_period: 15s
-  web:
-    image: robotics-lab-web:${ROBOTICS_LAB_TAG:-0.1.0}
-    depends_on:
-      api:
-        condition: service_healthy
-    ports:
-      - '${ROBOTICS_LAB_BIND:-127.0.0.1}:${ROBOTICS_LAB_PORT:-18320}:8080'
-    init: true
-    read_only: true
-    tmpfs:
-      - /var/cache/nginx:size=32m,mode=1777
-      - /var/run:size=1m,mode=1777
-    cap_drop: [ALL]
-    security_opt: [no-new-privileges:true]
-    restart: unless-stopped
-    stop_grace_period: 10s
 volumes:
   robotics-lab-data:

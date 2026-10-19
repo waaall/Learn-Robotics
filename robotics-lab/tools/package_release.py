@@ -7,6 +7,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import tempfile
+import tomllib
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -23,7 +24,8 @@ def sha256(path):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--arch", choices=("amd64", "arm64"), required=True)
-    parser.add_argument("--tag", default="0.1.0")
+    version = tomllib.loads((ROOT / "pyproject.toml").read_text())["project"]["version"]
+    parser.add_argument("--tag", default=version)
     parser.add_argument("--output", type=Path, default=ROOT / "dist")
     args = parser.parse_args()
     platform = "linux/" + args.arch
@@ -33,19 +35,21 @@ def main():
     archive = output / (stem + ".zip")
     if archive.exists():
         raise FileExistsError(f"交付包已存在，请指定新的输出目录或版本: {archive}")
-    images = [f"robotics-lab-{service}:{args.tag}" for service in ("api", "web")]
+    images = [f"robotics-lab:{args.tag}"]
     with tempfile.TemporaryDirectory(prefix="robotics-release-", dir=output) as temporary:
         bundle = Path(temporary) / stem
         bundle.mkdir()
         subprocess.run(["docker", "image", "save", "--platform", platform,
                         "--output", str(bundle / "images.tar"), *images], check=True)
-        for name in ("compose.yaml", ".env.example", "run-docker.sh", "run-docker.ps1"):
+        for name in ("compose.yaml", ".env.example"):
             shutil.copy2(ROOT / name, bundle / name)
-        shutil.copy2(ROOT / "docs/deployment/quick-start.md", bundle / "README.md")
+        instructions = (ROOT / "docs/deployment/quick-start.md").read_text(encoding="utf-8")
+        (bundle / "README.md").write_text(instructions.replace("../validation/deployment.md", "VALIDATION.md"), encoding="utf-8")
+        shutil.copy2(ROOT / "docs/validation/deployment.md", bundle / "VALIDATION.md")
         # 发布时冻结镜像版本；解压后无需源码目录和构建工具。
         (bundle / ".env").write_text(
-            f"ROBOTICS_LAB_TAG={args.tag}\nROBOTICS_LAB_BIND=127.0.0.1\n"
-            "ROBOTICS_LAB_PORT=18320\nROBOTICS_LAB_DATA_DIR=\n", encoding="utf-8")
+            f"ROBOTICS_LAB_TAG={args.tag}\nROBOTICS_LAB_HOST=127.0.0.1\n"
+            "ROBOTICS_LAB_PORT=18320\n", encoding="utf-8")
         manifest = {"version": args.tag, "platform": platform, "images": images,
                     "data_included": False, "files": {}}
         for path in sorted(bundle.iterdir()):

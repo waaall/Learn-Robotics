@@ -1,3 +1,4 @@
+// 课程与查看器共用应用源，所有部署使用服务端返回的相对查看器地址。
 import { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "katex/dist/katex.min.css";
@@ -116,9 +117,7 @@ function App() {
   const ready =
     session?.status === "ready" &&
     session.experiment_id === lesson?.experiment_id;
-  const viewerUrl = session
-    ? session.url || `${location.protocol}//${location.hostname}:${session.port}/`
-    : undefined;
+  const viewerUrl = session?.url;
   const latest = state || run?.state;
   const pandaLatest = latest && !("robot" in latest) ? latest : null;
   const humanoidLatest = latest && "robot" in latest ? latest : null;

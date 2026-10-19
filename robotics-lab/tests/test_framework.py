@@ -1,9 +1,11 @@
+"""验证数值计算、单会话生命周期与跨部署一致的应用接口。"""
+
 from pathlib import Path
 import os
 import tempfile
 import time
 import unittest
-from unittest.mock import Mock, patch
+from unittest.mock import MagicMock, Mock, patch
 
 from fastapi.testclient import TestClient
 
@@ -39,19 +41,37 @@ class PhysicsTests(unittest.TestCase):
 
 
 class SessionTests(unittest.TestCase):
-    def test_fixed_viewer_port_and_public_url_survive_session_start(self):
+    def test_http_listener_without_published_model_is_not_ready(self):
+        process = Mock()
+        process.poll.return_value = None
+        manager = SessionManager(Path("unused"))
+        manager.session = Session("test", "pendulum", 12345, process,
+                                  time.monotonic(), Path("unused.log"))
+        response = MagicMock()
+        response.__enter__.return_value.status = 200
+        response.__enter__.return_value.read.return_value = b'{"total_bytes": 0}'
+        with patch("robotics_lab.sessions.urlopen", return_value=response) as probe:
+            self.assertEqual(manager.status()["status"], "starting")
+            self.assertTrue(probe.call_args.args[0].endswith("/model?total_bytes"))
+            response.__enter__.return_value.read.return_value = b'{"total_bytes": 1024}'
+            self.assertEqual(manager.status()["status"], "ready")
+
+    def test_session_uses_internal_port_and_same_origin_public_url(self):
         process = Mock()
         process.poll.return_value = None
         with tempfile.TemporaryDirectory() as directory:
-            manager = SessionManager(Path(directory), viewer_port=8081, viewer_url="/viewer/")
+            manager = SessionManager(Path(directory))
             with patch("robotics_lab.sessions.viewer_capability", return_value={"available": True}), \
                  patch("robotics_lab.sessions.subprocess.Popen", return_value=process) as launch, \
                  patch("robotics_lab.sessions.urlopen", side_effect=TimeoutError):
                 result = manager.start("pendulum")
             self.assertEqual(result["url"], "/viewer/")
-            self.assertEqual(result["port"], 8081)
-            self.assertIn("8081", launch.call_args.args[0])
+            self.assertNotIn("port", result)
+            port = manager.active_port()
+            self.assertGreater(port, 0)
+            self.assertIn(str(port), launch.call_args.args[0])
             manager.stop()
+            self.assertIsNone(manager.active_port())
 
     def test_running_viewer_is_not_subject_to_startup_deadline(self):
         process = Mock()
@@ -95,8 +115,6 @@ class ApiTests(unittest.TestCase):
     def test_configured_data_directory_survives_application_restart(self):
         with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {
             "ROBOTICS_LAB_DATA_DIR": directory,
-            "ROBOTICS_LAB_VIEWER_PORT": "8081",
-            "ROBOTICS_LAB_VIEWER_URL": "/viewer/",
         }):
             with TestClient(create_app()) as client:
                 self.assertEqual(client.get("/api/health").json()["status"], "ok")

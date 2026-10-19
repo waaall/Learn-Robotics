@@ -1,45 +1,55 @@
-# Robotics Lab Docker 离线交付包
+# Robotics Lab Docker 离线交付与迁移
 
-当前交付包为 `linux-amd64`，用于 Intel/AMD 电脑。解压包中的 `manifest.json` 记录适用 CPU 架构和文件 SHA-256。Apple Silicon 所需 ARM64 包的构建与验收后续在 macOS 完成，当前未交付。镜像运行环境为 Linux；Windows 和 macOS 使用 Docker Desktop 的 Linux 容器，Linux 可使用 Docker Engine 与 Compose 插件。宿主机无需 Python、Node.js 或手动安装 WSL Ubuntu。当前已在 Windows 的 Linux 容器中实测，macOS 宿主机尚未实测。
+本页适用于单应用镜像的交付包。完整源码的原生与 Docker 安装见项目 README。Windows/macOS 使用 Docker Desktop 的 Linux 容器，Linux 可使用 Docker Engine 与 Compose v2+；宿主机不需要 Python 或 Node。
 
-## 启动
+## 选择架构与启动
 
-先安装并启动 Docker，完整解压 ZIP，再在包含 `compose.yaml` 的目录打开终端。
+包名中的 `linux-arm64` 对应 Apple Silicon 或 ARM64 Linux 容器，`linux-amd64` 对应 Intel/AMD Linux 容器。`manifest.json` 记录目标架构、镜像标签和逐文件 SHA-256。构建配置支持这两个目标，实际验收及已生成交付包以 [验证记录](../validation/deployment.md) 为准。
 
-Windows PowerShell：
+先安装并启动 Docker，完整解压 ZIP，在包含 `compose.yaml` 的目录执行；PowerShell 与 shell 使用同一组命令：
 
-```powershell
-./run-docker.ps1 load
-./run-docker.ps1
+```shell
+docker image load --input images.tar
+docker compose up -d --wait --remove-orphans
 ```
 
-Linux / macOS：
+打开 <http://localhost:18320>。包内镜像已包含 Python 依赖、前端、模型、网格和策略，导入后无需联网。浏览器需支持 WebAssembly、WebGL2 和 SharedArrayBuffer，保持硬件加速可用。
 
-```bash
-bash run-docker.sh load
-bash run-docker.sh
+```shell
+docker compose ps
+docker compose logs --tail 100 -f
+docker compose exec lab python -m robotics_lab doctor
+docker compose exec lab python -m robotics_lab smoke
+docker compose down
 ```
 
-打开 <http://localhost:18320>。加载的是包内镜像，首次运行也无需联网下载 Python 依赖和模型。浏览器需支持 WebAssembly、WebGL 和 SharedArrayBuffer；保持桌面浏览器硬件加速可用。
+`smoke` 会创建数值记录并占用临时交互会话；运行前先结束已有实验。停止不删除数据卷。若同时运行原生服务或另一份容器，请在 `.env` 设置不同的 `ROBOTICS_LAB_PORT`，并为并行部署指定不同的 Compose 项目名。
 
-## 停止、日志与配置
+## 配置与数据保存
 
-Windows 使用 `./run-docker.ps1 stop`、`./run-docker.ps1 logs`、`./run-docker.ps1 status`；Linux/macOS 将相同操作传给 `bash run-docker.sh`。
+`.env` 中的 `ROBOTICS_LAB_HOST`、`ROBOTICS_LAB_PORT` 调整宿主机监听地址和端口，`ROBOTICS_LAB_TAG` 冻结镜像标签。默认只向本机开放。远程访问需自行配置 HTTPS、认证，并保留应用的 COOP/COEP 响应头；远程安全部署尚未验收。
 
-编辑 `.env` 可修改 `ROBOTICS_LAB_PORT`。默认只绑定本机回环地址，供单用户学习；远程部署需要配置 HTTPS 和访问认证。WASM 多线程要求安全上下文，本机 localhost 可使用 HTTP，远程访问使用 HTTPS，并保留代理的 COOP/COEP 响应头。
+Docker 使用 `robotics-lab-data` 命名卷，数据路径固定为 `/var/lib/robotics-lab`。`.env.example` 中的 `ROBOTICS_LAB_DATA_DIR` 只用于原生部署，不改变 Docker 的卷位置。镜像和 ZIP 不包含用户数据；课时完成状态位于当前浏览器 localStorage。
 
-## 数据保存与迁移
+不要使用 `docker compose down --volumes` 删除需要保留的卷。需要自定义宿主机挂载时，通过单独的 Compose 覆盖文件替换数据卷，并确保容器 UID/GID `10001:10001` 可写；常规部署不需要挂载宿主机目录。
 
-默认使用 Compose 的 `robotics-lab-data` 命名卷，停止和重建容器会保留数值记录和日志。不要执行 `docker compose down --volumes`，该选项会删除数据卷。镜像和 ZIP 不包含用户运行数据。课时完成状态保存在当前浏览器，数据卷不包含浏览器的 localStorage。
+## 备份与恢复
 
-如需直接保存到宿主机目录，在 `.env` 配置 `ROBOTICS_LAB_DATA_DIR=./data`，先创建该目录；Linux 目录需允许容器 UID/GID `10001:10001` 写入。切换目录会切换数据存储位置，旧卷不会自动复制到新目录。
+备份前结束交互实验并停止服务写入：
 
-备份默认卷：先结束仿真、停止写入，再复制完整数据目录，最后恢复服务。以下命令在 PowerShell 和 shell 中相同：
-
-```bash
-docker compose stop api
-docker compose cp api:/var/lib/robotics-lab ./robotics-data-backup
+```shell
+docker compose stop lab
+docker compose cp lab:/var/lib/robotics-lab ./robotics-data-backup
 docker compose up -d --wait
 ```
 
-迁移时先将备份解压到新机器专用 `data/` 目录，再配置该目录挂载并恢复服务。使用相同软件版本完成恢复验证后再升级。
+新机器先导入镜像并创建卷，在停止服务期间恢复完整目录，再修正目录所有者并启动。以下命令中的路径按实际备份位置调整：
+
+```shell
+docker compose create
+docker compose cp ./robotics-data-backup/. lab:/var/lib/robotics-lab/
+docker compose run --rm --no-deps --user 0 --cap-add CHOWN --entrypoint chown lab -R 10001:10001 /var/lib/robotics-lab
+docker compose up -d --wait
+```
+
+使用相同软件版本确认数值记录可读后再升级。原生与 Docker 之间迁移时，也复制同一数据目录并执行相同读取验证，不复制虚拟环境或浏览器 localStorage。

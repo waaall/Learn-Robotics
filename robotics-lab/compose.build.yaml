@@ -1,10 +1,6 @@
 # 源码构建时叠加；离线交付包只包含 compose.yaml 和预构建镜像。
 services:
-  api:
+  lab:
     build:
       context: .
-      dockerfile: Dockerfile
-  web:
-    build:
-      context: ./frontend
       dockerfile: Dockerfile

@@ -2,7 +2,6 @@
 
 from contextlib import asynccontextmanager
 import json
-import os
 from pathlib import Path
 from uuid import UUID, uuid4
 
@@ -14,12 +13,11 @@ from pydantic import BaseModel, Field
 from . import __version__
 from .catalog import catalog, get_experiment
 from .curriculum import courses, get_lesson
+from .config import Settings
 from .diagnostics import viewer_capability
+from .gateway import IsolationHeaders, ViewerGateway
 from .physics import simulate
 from .sessions import SessionManager
-
-PROJECT = Path(__file__).resolve().parents[2]
-
 
 class ExperimentRequest(BaseModel):
     experiment_id: str
@@ -37,20 +35,24 @@ class SessionCommand(BaseModel):
     paused: bool = True
 
 
-def create_app(runtime: Path | None = None) -> FastAPI:
-    runtime = runtime or Path(os.environ.get("ROBOTICS_LAB_DATA_DIR", PROJECT / ".runtime"))
-    viewer_port = int(os.environ.get("ROBOTICS_LAB_VIEWER_PORT", "0"))
-    if not 0 <= viewer_port <= 65535:
-        raise ValueError("ROBOTICS_LAB_VIEWER_PORT 必须在 0 到 65535 之间")
-    manager = SessionManager(runtime / "sessions", viewer_port=viewer_port,
-                             viewer_url=os.environ.get("ROBOTICS_LAB_VIEWER_URL") or None)
+def create_app(runtime: Path | None = None, *, settings: Settings | None = None) -> FastAPI:
+    settings = settings or Settings.from_env()
+    runtime = runtime or settings.data_dir
+    manager = SessionManager(runtime / "sessions")
+    gateway = ViewerGateway(manager)
 
     @asynccontextmanager
     async def lifespan(_app):
-        yield
-        manager.stop()
+        runtime.mkdir(parents=True, exist_ok=True)
+        try:
+            yield
+        finally:
+            manager.stop()
+            await gateway.close()
 
     app = FastAPI(title="Robotics Lab", version=__version__, lifespan=lifespan)
+    app.add_middleware(IsolationHeaders)
+    gateway.install(app)
 
     @app.get("/api/health")
     def health():
@@ -130,7 +132,7 @@ def create_app(runtime: Path | None = None) -> FastAPI:
         except RuntimeError as error:
             raise HTTPException(503, str(error)) from error
 
-    dist = PROJECT / "frontend" / "dist"
+    dist = settings.static_dir
     if dist.is_dir():
         app.mount("/", StaticFiles(directory=dist, html=True), name="frontend")
     else:

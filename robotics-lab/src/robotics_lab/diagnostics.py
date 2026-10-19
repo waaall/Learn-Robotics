@@ -28,6 +28,6 @@ def viewer_capability() -> dict:
     return {
         "available": not missing, "platform": platform.system(), "mujoco": mujoco.__version__,
         "reason": ("查看器组件检查通过，启动后仍需浏览器验收" if not missing else
-                   "当前运行环境缺少官方网页仿真组件；请在具备完整组件的 Linux 环境运行平台。"),
+                   "当前环境缺少官方网页仿真组件；请检查锁定依赖，使用 Linux、Apple Silicon macOS 或 Linux 容器。"),
         "details": missing, "source": SOURCE,
     }
