@@ -1,5 +1,7 @@
+// 课程原理、参数与观测组件；观测值取自仿真返回状态。
 import katex from "katex";
 import { useId } from "react";
+import { JointPositionTable } from "./joint-position-table";
 import { TimeSeries } from "./timeseries";
 import {
   HOME,
@@ -750,6 +752,20 @@ export function Readings({
             方块位置 / m：{s.cube_position.map((v) => num(v, 3)).join(" · ")}
           </p>
         </div>
+      )}
+      {/* 结构课保留末端位置主图，通过折叠表补充实际、参考与已应用目标角。 */}
+      {["structure", "fk"].includes(mode) && (
+        <details>
+          <summary>关节实际角、参考角与目标角</summary>
+          <p className="control-hint">
+            目标角为已应用的控制目标，参考角为控制器当前使用的参考。
+          </p>
+          <JointPositionTable
+            joints={s.joints}
+            reference_joints={s.reference_joints}
+            target_joints={s.target_joints}
+          />
+        </details>
       )}
       {["structure", "fk", "ik"].includes(mode) && (
         <details open={mode === "structure"}>

@@ -1,9 +1,8 @@
 // 课程与查看器共用应用源，所有部署使用服务端返回的相对查看器地址。
-import { useEffect, useRef, useState } from "react";
-import { createRoot } from "react-dom/client";
-import "katex/dist/katex.min.css";
-import "./style.css";
+import { useEffect, useReducer, useRef, useState } from "react";
 import { HumanoidActions, HumanoidChart, HumanoidControls, HumanoidReadings } from "./humanoid";
+import { createObservationLog, reduceObservationLog } from "./observations";
+import { SystemRequests } from "./system-requests";
 import {
   Chart,
   Controls,
@@ -25,12 +24,7 @@ import {
   type System,
 } from "./types";
 type RobotObservation = Observation | HumanoidObservation;
-function appendObservation(previous: RobotObservation[], next: RobotObservation) {
-  const last = previous.at(-1);
-  if (last && next.time < last.time) return [next];
-  if (last?.time === next.time) return [...previous.slice(0,-1), next];
-  return [...previous, next].slice(-400);
-}
+const NEW_TRIAL_ACTIONS = new Set(["reset", "gravity-release", "gravity-hold", "jacobian-run"]);
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const response = await fetch(path, options);
@@ -69,15 +63,20 @@ const LABELS: Record<string, string> = {
   fallen_samples: "跌倒采样数",
 };
 
-function App() {
+export function App() {
   const [courses, setCourses] = useState<Course[]>([]),
     [selected, setSelected] = useState(
       canonicalLessonId(location.hash.slice(1)) || "panda-structure",
     );
-  const [system, setSystem] = useState<System | null>(null),
-    [state, setState] = useState<RobotObservation | null>(null);
-  const [settings, setSettings] = useState(() => defaults()),
-    [history, setHistory] = useState<RobotObservation[]>([]);
+  const [system, setSystem] = useState<System | null>(null);
+  const [systemRequests] = useState(() => new SystemRequests<System>(
+    signal => request<System>("/api/system", { signal }), setSystem,
+  ));
+  const [observations, dispatchObservation] = useReducer(
+    reduceObservationLog<RobotObservation>, undefined, () => createObservationLog<RobotObservation>(),
+  );
+  const { current: state, history } = observations;
+  const [settings, setSettings] = useState(() => defaults());
   const [run, setRun] = useState<Run | null>(null),
     [busy, setBusy] = useState(""),
     [error, setError] = useState("");
@@ -145,15 +144,17 @@ function App() {
     const controller = new AbortController();
     Promise.all([
       request<Course[]>("/api/courses", { signal: controller.signal }),
-      request<System>("/api/system", { signal: controller.signal }),
+      systemRequests.read({ signal: controller.signal }),
     ])
-      .then(([items, info]) => {
+      .then(([items]) => {
+        if (controller.signal.aborted) return;
+        // 初始课程请求可能慢于后续系统轮询，选课时使用最近已接受的系统状态。
+        const info = systemRequests.current();
         setCourses(items);
-        setSystem(info);
         const lessons = items.flatMap((c) => c.lessons);
         const initialLesson =
           lessons.find((l) =>
-            info.session
+            info?.session
               ? l.experiment_id === info.session.experiment_id
               : l.id === selection.current,
           ) || lessons[0];
@@ -166,17 +167,19 @@ function App() {
       });
     const timer = setInterval(
       () =>
-        request<System>("/api/system", { signal: controller.signal })
-          .then(setSystem)
+        systemRequests.read({ signal: controller.signal })
           .catch(() => {}),
       2000,
     );
     return () => {
       controller.abort();
+      systemRequests.cancel();
       clearInterval(timer);
     };
-  }, []);
+  }, [systemRequests]);
   useEffect(() => {
+    dispatchObservation({ type: "session", sessionId:
+      session && session.experiment_id === selected && controlled ? session.id : null });
     if (!session || session.experiment_id !== selected || !controlled) return;
     const controller = new AbortController();
     const read = () =>
@@ -191,8 +194,7 @@ function App() {
             selection.current !== selected
           )
             return;
-          setState(s);
-          setHistory((prev) => appendObservation(prev,s));
+          dispatchObservation({ type: "receive", observation: s });
         })
         .catch(() => {});
     read();
@@ -255,17 +257,16 @@ function App() {
   }
   async function changeLesson(id: string) {
     if (id === selected || busy) return;
-    await perform("switch", async () => {
+    await perform("switch", () => systemRequests.change(async change => {
       if (session) await request("/api/sessions/current", { method: "DELETE" });
-      setSystem((prev) => (prev ? { ...prev, session: null } : prev));
+      systemRequests.update(prev => prev ? { ...prev, session: null } : prev, change);
       setSelected(id);
       setSettings(
         defaults(
           courses.flatMap((c) => c.lessons).find((l) => l.id === id),
         ),
       );
-      setState(null);
-      setHistory([]);
+      dispatchObservation({ type: "clear" });
       setRun(null);
       setJoint(defaultJoint(courses.flatMap((c) => c.lessons).find((l) => l.id === id)?.mode ?? ""));
       setMotionJoint(1);
@@ -273,7 +274,7 @@ function App() {
       if (window.matchMedia("(max-width: 1100px)").matches)
         showDirectory(false);
       window.scrollTo(0, 0);
-    });
+    }));
   }
   async function command(action: string, extra = {}, id = session?.id) {
     if (!id) throw new Error("请先打开交互实验");
@@ -287,22 +288,23 @@ function App() {
       settings: { ...settings },
       ...extra,
     });
-    setState(result);
-    setHistory(previous => appendObservation(previous,result));
+    dispatchObservation({ type: "receive", observation: result,
+      restartHistory: NEW_TRIAL_ACTIONS.has(action) });
     return result;
   }
   async function openExperiment() {
-    await perform("open", async () => {
+    await perform("open", () => systemRequests.change(async change => {
       const created = await request<Session>(
         "/api/sessions",
         post({ experiment_id: lesson!.experiment_id }),
       );
-      setSystem((prev) => (prev ? { ...prev, session: created } : prev));
+      systemRequests.update(prev => prev ? { ...prev, session: created } : prev, change);
       if (!controlled) return;
+      dispatchObservation({ type: "session", sessionId: created.id });
       for (let i = 0; i < 100; i++) {
         await new Promise((resolve) => setTimeout(resolve, 500));
-        const info = await request<System>("/api/system");
-        setSystem(info);
+        const info = await systemRequests.read({ change });
+        if (!info) throw new Error("会话操作已失效");
         if (info.session?.id !== created.id) throw new Error("实验会话已改变");
         if (info.session.status === "failed")
           throw new Error(info.session.error || "仿真启动失败");
@@ -312,7 +314,14 @@ function App() {
         }
       }
       throw new Error("仿真启动超时");
-    });
+    }));
+  }
+  async function closeExperiment() {
+    await perform("stop", () => systemRequests.change(async change => {
+      await request("/api/sessions/current", { method: "DELETE" });
+      systemRequests.update(prev => prev ? { ...prev, session: null } : prev, change);
+      dispatchObservation({ type: "session", sessionId: null });
+    }));
   }
   async function control(action: string) {
     await perform(action, async () => {
@@ -325,13 +334,10 @@ function App() {
         setSettings(defaults(lesson));
         setJoint(defaultJoint(mode));
         setMotionJoint(1);
-        setHistory([]);
       }
       if ((action === "gravity-release" || action === "gravity-hold") && "compensation" in result) {
         setSettings({ ...defaults(lesson), compensation: result.compensation });
-        setHistory([]);
       }
-      if (action === "jacobian-run") setHistory([]);
     });
   }
   function toggleCompleted() {
@@ -558,17 +564,7 @@ function App() {
                         <button
                           className="button small"
                           disabled={!!busy}
-                          onClick={() =>
-                            void perform("stop", async () => {
-                              await request("/api/sessions/current", {
-                                method: "DELETE",
-                              });
-                              setSystem((prev) =>
-                                prev ? { ...prev, session: null } : prev,
-                              );
-                              setState(null);
-                            })
-                          }
+                          onClick={() => void closeExperiment()}
                         >
                           结束实验
                         </button>
@@ -780,4 +776,3 @@ function App() {
     </div>
   );
 }
-createRoot(document.getElementById("root")!).render(<App />);

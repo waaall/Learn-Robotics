@@ -66,6 +66,7 @@ export type Observation = {
   paused: boolean;
   age_seconds: number;
   session_id: string;
+  observation_sequence: number;
   phase: string;
   cube_position: number[];
   contacts: number;
@@ -159,6 +160,7 @@ export type HumanoidSettings = {
 };
 export type HumanoidObservation = {
   robot: "g1"; time: number; phase: string; paused: boolean; age_seconds: number; session_id: string;
+  observation_sequence: number;
   joints: number[]; joint_names: string[]; reference_joints: number[]; target_joints: number[];
   velocities: number[]; actuator_torque: number[];
   base_position: number[]; base_quaternion: number[]; base_velocity: number[]; body_velocity: number[];

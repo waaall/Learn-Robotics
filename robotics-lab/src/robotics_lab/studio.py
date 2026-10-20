@@ -21,6 +21,7 @@ class CourseStudio(step_control.StepControl):
         self.bridge = bridge
         self.command_id = None
         self.command_error = None
+        self.observation_sequence = 0
         self.last_tick = time.monotonic()
         self.last_write = 0.0
         self.budget = 0.0
@@ -28,6 +29,7 @@ class CourseStudio(step_control.StepControl):
     def _write(self):
         state = self.controller.state()
         state.update(command_id=self.command_id, command_error=self.command_error,
+                     observation_sequence=self.observation_sequence + 1,
                      paused=self.step_control.get_pause_state() != sim.PauseState.UNPAUSED,
                      written_at=time.time())
         path = self.bridge.with_suffix(".state.json")
@@ -38,6 +40,8 @@ class CourseStudio(step_control.StepControl):
         except PermissionError:
             # Windows 读取 DrvFS 文件时可能短暂禁止替换；保留上一份状态，下轮重试。
             return False
+        # 仅在原子发布成功后推进序号；恢复初态不重置该计数。
+        self.observation_sequence += 1
         self.last_write = time.monotonic()
         return True
 

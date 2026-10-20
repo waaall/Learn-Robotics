@@ -103,9 +103,12 @@ docker compose exec lab python -m robotics_lab smoke
 
 ```shell
 npm ci --prefix frontend
+npm test --prefix frontend
 npm run dev --prefix frontend
 npm run build --prefix frontend
 ```
+
+`npm test --prefix frontend` 包含组件、观测排序及应用级 DOM 回归；系统轮询测试使用可控延迟的模拟接口，不启动或修改真实仿真会话。
 
 先启动应用服务，再启动 Vite。开发页面将 API、查看器资源和 WebSocket 转发到本机应用端口（默认 18320，也读取项目 `.env`），并提供跨源隔离响应头。构建后由同一应用提供页面。页面不使用远程字体或运行时 CDN。
 
