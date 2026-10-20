@@ -40,6 +40,7 @@
 ## 学习策略与 VLA
 
 - 研究笔记：[SmolVLA：模型架构、训练与推理](research/smolvla-architecture.md)：记录 VLM、动作专家、状态投影、Flow Matching 及梯度计算，对照 LeRobot 0.6.1 实现与本项目配置。
+- **证据审查：** [仿真强化学习能否用于真实机器人与工业应用](research/sim-to-real-robot-training-evidence.md)：核对宇树 G1 源码、顶级期刊真机研究，以及 ANYmal、Digit、Figure 等工业资料，区分仿真训练、真实数据、遥操作与工业可靠性。
 
 视觉语言动作模型（Vision-Language-Action，VLA）不只是输出文字建议。以下系统已经由模型直接生成操作动作或关节运动目标，不应把这些公开事实写成“将来可能替代”：
 
