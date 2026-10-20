@@ -13,6 +13,7 @@ import {
 } from "./widgets";
 import {
   defaults,
+  defaultJoint,
   canonicalLessonId,
   GEOMETRIC,
   HOME,
@@ -24,6 +25,12 @@ import {
   type System,
 } from "./types";
 type RobotObservation = Observation | HumanoidObservation;
+function appendObservation(previous: RobotObservation[], next: RobotObservation) {
+  const last = previous.at(-1);
+  if (last && next.time < last.time) return [next];
+  if (last?.time === next.time) return [...previous.slice(0,-1), next];
+  return [...previous, next].slice(-400);
+}
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const response = await fetch(path, options);
@@ -103,6 +110,7 @@ function App() {
     });
   const selection = useRef(selected),
     actions = useRef<unknown[]>([]);
+  const inspector = useRef<HTMLElement | null>(null);
   selection.current = selected;
   const course =
     courses.find((c) => c.lessons.some((l) => l.id === selected)) || courses[0];
@@ -150,8 +158,8 @@ function App() {
               : l.id === selection.current,
           ) || lessons[0];
         setSelected(initialLesson.id);
-        setSettings(defaults(initialLesson.mode));
-        setJoint(["jacobian", "gravity"].includes(initialLesson.mode) ? 1 : 0);
+        setSettings(defaults(initialLesson));
+        setJoint(defaultJoint(initialLesson.mode));
       })
       .catch((e) => {
         if (!controller.signal.aborted) setError(String(e));
@@ -184,9 +192,7 @@ function App() {
           )
             return;
           setState(s);
-          setHistory((prev) =>
-            s.time < (prev.at(-1)?.time ?? 0) ? [s] : [...prev, s].slice(-400),
-          );
+          setHistory((prev) => appendObservation(prev,s));
         })
         .catch(() => {});
     read();
@@ -198,6 +204,7 @@ function App() {
   }, [session?.id, selected, controlled]);
   useEffect(() => {
     historyReplace(selected);
+    inspector.current?.scrollTo(0,0);
   }, [selected]);
   useEffect(() => {
     if (!directoryOpen) return;
@@ -254,13 +261,13 @@ function App() {
       setSelected(id);
       setSettings(
         defaults(
-          courses.flatMap((c) => c.lessons).find((l) => l.id === id)?.mode,
+          courses.flatMap((c) => c.lessons).find((l) => l.id === id),
         ),
       );
       setState(null);
       setHistory([]);
       setRun(null);
-      setJoint(["panda-jacobian", "panda-gravity"].includes(id) ? 1 : 0);
+      setJoint(defaultJoint(courses.flatMap((c) => c.lessons).find((l) => l.id === id)?.mode ?? ""));
       setMotionJoint(1);
       actions.current = [];
       if (window.matchMedia("(max-width: 1100px)").matches)
@@ -281,6 +288,7 @@ function App() {
       ...extra,
     });
     setState(result);
+    setHistory(previous => appendObservation(previous,result));
     return result;
   }
   async function openExperiment() {
@@ -314,12 +322,13 @@ function App() {
         action === "pause" ? { paused: !state?.paused } : {},
       );
       if (action === "reset") {
-        setSettings(defaults(mode));
+        setSettings(defaults(lesson));
+        setJoint(defaultJoint(mode));
         setMotionJoint(1);
         setHistory([]);
       }
       if ((action === "gravity-release" || action === "gravity-hold") && "compensation" in result) {
-        setSettings({ ...defaults(mode), compensation: result.compensation });
+        setSettings({ ...defaults(lesson), compensation: result.compensation });
         setHistory([]);
       }
       if (action === "jacobian-run") setHistory([]);
@@ -616,15 +625,16 @@ function App() {
                 </div>
                 {controlled && (
                   <aside
+                    ref={inspector}
                     className="experiment-inspector"
                     aria-label="实验观测与参数"
                   >
                     {mode === "jacobian" && controlPanel}
-                    {humanoid ? <HumanoidReadings state={humanoidLatest} live={!!state} /> : <Readings
+                    {humanoid ? <HumanoidReadings mode={mode} state={humanoidLatest} live={!!state} /> : <Readings
                       state={pandaLatest ?? undefined}
                       mode={mode}
                       live={!!state}
-                      joint={motionJoint}
+                      joint={mode === "jacobian" ? motionJoint : joint}
                     />}
                     {mode !== "jacobian" && controlPanel}
                   </aside>
@@ -646,7 +656,7 @@ function App() {
                   <div className="panel-heading">
                     <h3>交互过程记录</h3>
                     <div className="toolbar">
-                      {panda && mode !== "grasp" && mode !== "jacobian" && (
+                      {panda && mode !== "structure" && mode !== "grasp" && mode !== "jacobian" && (
                         <select
                           aria-label="曲线关节"
                           value={joint}
@@ -668,7 +678,7 @@ function App() {
                       </button>
                     </div>
                   </div>
-                  {humanoid ? <HumanoidChart samples={history} /> : <Chart
+                  {humanoid ? <HumanoidChart key={selected} mode={mode} samples={history} /> : <Chart
                     samples={history.map((s) => ({
                       ...s,
                       cube_height: "cube_position" in s ? s.cube_position[2] : 0,
@@ -715,7 +725,7 @@ function App() {
               </p>
               {run && (
                 <>
-                  {humanoid ? <HumanoidChart samples={run.samples} /> : <Chart
+                  {humanoid ? <HumanoidChart key={selected} mode={mode} samples={run.samples} /> : <Chart
                     samples={run.samples}
                     joint={joint}
                     mode={mode}

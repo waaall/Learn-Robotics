@@ -13,6 +13,21 @@ KD = np.array([2, 2, 2, 4, 2, 2] * 2, dtype=float)
 ASSETS = Path(__file__).parent / "assets/models/g1"
 
 
+def default_settings(mode):
+    settings = {"squat": 0.0, "lean": 0.0, "shift": 0.0, "duration": 3.0,
+                "command": [0.3, 0.0, 0.0], "friction": 1.0,
+                "push_force": 20.0, "push_duration": 0.4, "payload": 0.0}
+    if mode == "g1-structure":
+        settings["squat"] = 0.15
+    elif mode == "g1-contact":
+        settings["shift"] = 0.03
+    elif mode == "g1-balance":
+        settings.update(squat=0.2, shift=0.015)
+    elif mode == "g1-recovery":
+        settings["command"] = [0.2, 0.0, 0.0]
+    return settings
+
+
 def fingerprint(path):
     digest = hashlib.sha256()
     for item in [path, *sorted(ASSETS.rglob("*"))]:
@@ -123,6 +138,7 @@ class HumanoidController:
         self.policy_tick = -1
         self.walking = False
         self.push_start = None
+        self.push_trace = []
         self.phase = "关节 PD 站立 · 目标通过平滑参考执行"
         self.max_tilt = 0.0
         self.initial_xy = self.data.qpos[:2].copy()
@@ -199,6 +215,7 @@ class HumanoidController:
         if self.mode != "g1-recovery":
             raise ValueError("请在扰动与恢复课施加外力")
         self.push_start = float(self.data.time)
+        self.push_trace = []
 
     def _infer(self):
         d = self.data
@@ -229,12 +246,16 @@ class HumanoidController:
         gain = 8.0 * (1-blend) + blend
         d.ctrl[:] = gain * KP * (self.reference_q - d.qpos[self.qadr]) - np.sqrt(gain) * KD * d.qvel[self.vadr]
         d.xfrc_applied[self.root] = 0
-        if self.push_start is not None:
+        was_pushing = self.push_start is not None
+        if was_pushing:
             u = (d.time - self.push_start) / self.settings["push_duration"]
             if 0 <= u <= 1:
                 d.xfrc_applied[self.root, 0] = self.settings["push_force"] * np.sin(np.pi*u)**2
             else:
                 self.push_start = None
+            # 在物理线程保留已施加输入的 50 Hz 记录，短脉冲不依赖网页轮询捕获。
+            if not self.push_trace or tick % 10 == 0 or self.push_start is None:
+                self.push_trace.append([float(d.time), float(d.xfrc_applied[self.root, 0])])
         mujoco.mj_step(self.model, d)
         mujoco.mj_forward(self.model, d)
         self.max_tilt = max(self.max_tilt, self.tilt())
@@ -281,11 +302,13 @@ class HumanoidController:
                 "base_quaternion": d.qpos[3:7].tolist(), "base_velocity": d.qvel[:3].tolist(),
                 "body_velocity": (rotation.T @ d.qvel[:3]).tolist(), "tilt_rad": self.tilt(),
                 "com": com.tolist(), "support_polygon": hull, "support_margin_m": margin,
+                "weight_N": float(self.model.body_subtreemass[self.root] * np.linalg.norm(self.model.opt.gravity)),
                 "foot_forces": forces.tolist(), "contacts": int(d.ncon),
                 "command": self.command_reference.sample(d.time)[0].tolist(),
                 "requested_command": self.settings["command"], "policy_active": self.walking,
                 "policy_observation": self.observation.tolist(), "policy_action": self.action.tolist(),
                 "push_force_N": float(d.xfrc_applied[self.root, 0]),
+                "push_trace": self.push_trace.copy(),
                 "fallen": bool(d.qpos[2] < 0.4 or self.tilt() > 1.0),
                 "displacement_m": float(np.linalg.norm(d.qpos[:2]-self.initial_xy)),
                 "max_tilt_rad": self.max_tilt, "settings": self.settings.copy()}
@@ -296,7 +319,7 @@ def simulate_humanoid(experiment, model, data, duration, settings):
     if not math.isfinite(duration) or not 0 < duration <= 20 or not math.isclose(ratio, round(ratio)):
         raise ValueError("时长需在 (0, 20] 秒内，且为仿真步长的整数倍")
     controller = HumanoidController(model, data, experiment.mode)
-    controller.configure(settings or {})
+    controller.configure({**default_settings(experiment.mode), **(settings or {})})
     if experiment.mode in {"g1-walking", "g1-recovery"}:
         controller.start_walk()
     steps = round(ratio)

@@ -60,6 +60,7 @@ class CourseStudio(step_control.StepControl):
                 raise ValueError("该课程不支持此操作")
             if action == "reset":
                 self.controller.reset()
+                self._apply_lesson_defaults()
             elif action == "configure":
                 self.controller.configure(request.get("settings", {}))
             elif action in {"gravity-release", "gravity-hold"}:
@@ -101,8 +102,16 @@ class CourseStudio(step_control.StepControl):
     @messages.handler
     def _on_reset(self, event: messages.ResetEvent) -> bool:
         self.controller.reset()
+        self._apply_lesson_defaults()
         self._write()
         return True
+
+    def _apply_lesson_defaults(self):
+        if self.adapter == "humanoid":
+            from .humanoid import default_settings
+        else:
+            from .panda import default_settings
+        self.controller.configure(default_settings(self.controller.mode))
 
     @messages.handler(priority=messages.Priority.INTERNAL)
     def _on_step(self, event: messages.StepEvent) -> None:

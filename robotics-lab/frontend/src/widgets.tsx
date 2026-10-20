@@ -1,5 +1,6 @@
 import katex from "katex";
 import { useId } from "react";
+import { TimeSeries } from "./timeseries";
 import {
   HOME,
   LIMITS,
@@ -121,112 +122,28 @@ export function Matrix({
     </div>
   );
 }
-export function Chart({
-  samples,
-  joint,
-  mode,
-  unit = "rad",
-}: {
-  samples: Sample[];
-  joint: number;
-  mode: string;
-  unit?: string;
+export function Chart({ samples, joint, mode, unit = "rad" }: {
+  samples: Sample[]; joint: number; mode: string; unit?: string;
 }) {
-  if (samples.length < 2)
-    return <div className="empty-chart">运行实验后显示观测曲线。</div>;
-  const cube = mode === "grasp";
-  const velocity = mode === "jacobian";
-  const series = [
-    samples.map((s) =>
-      velocity
-        ? Math.hypot(...(s.cartesian_velocity ?? [0, 0, 0]))
-        : cube
-          ? (s.cube_height ?? s.cube_position?.[2] ?? 0)
-          : (s.joints?.[joint] ?? s.value ?? 0),
-    ),
-  ];
-  if (
-    ["structure", "joint-control", "ik", "trajectory"].includes(mode) &&
-    samples[0].reference_joints
-  )
-    series.push(samples.map((s) => s.reference_joints?.[joint] ?? 0));
-  if (velocity)
-    series.push(
-      samples.map((s) =>
-        Math.hypot(...(s.measured_cartesian_velocity ?? [0, 0, 0])),
-      ),
-    );
-  const all = series.flat(),
-    lo = Math.min(...all),
-    hi = Math.max(...all),
-    span = Math.max(hi - lo, 0.02);
-  const t0 = samples[0].time,
-    t1 = samples.at(-1)!.time,
-    elapsed = Math.max(t1 - t0, 0.001);
-  return (
-    <div className="chart">
-      <div className="chart-caption">
-        <span>
-          {velocity
-            ? "末端速度大小 / m·s⁻¹"
-            : cube
-              ? "方块高度 / m"
-              : mode === "physics"
-                ? `观测量 / ${unit}`
-                : `关节 ${joint + 1} / rad`}
-        </span>
-        <span>
-          <i />
-          {velocity ? "雅可比预测" : "实际值"}{" "}
-          {series.length > 1 && (
-            <>
-              <i className="reference" />
-              {velocity ? "位置差分观测" : "参考值"}
-            </>
-          )}
-        </span>
-      </div>
-      <svg
-        viewBox="0 0 640 170"
-        role="img"
-        aria-label={
-          velocity
-            ? "雅可比预测与位置差分观测速度大小曲线"
-            : cube
-              ? "方块实际高度曲线"
-              : "实际状态与参考曲线"
-        }
-      >
-        {[30, 85, 140].map((y) => (
-          <path key={y} d={`M45 ${y}H625`} className="chart-grid" />
-        ))}
-        {series.map((values, k) => (
-          <path
-            key={k}
-            className={`trace ${k ? "reference-trace" : ""}`}
-            d={values
-              .map(
-                (v, i) =>
-                  `${i ? "L" : "M"}${45 + ((samples[i].time - t0) / elapsed) * 580},${135 - ((v - lo) / span) * 100}`,
-              )
-              .join(" ")}
-          />
-        ))}
-        <text x="4" y="35">
-          {hi.toFixed(2)}
-        </text>
-        <text x="4" y="140">
-          {lo.toFixed(2)}
-        </text>
-        <text x="45" y="163">
-          {t0.toFixed(1)} s
-        </text>
-        <text x="570" y="163">
-          {t1.toFixed(1)} s
-        </text>
-      </svg>
-    </div>
-  );
+  const times = samples.map(s => s.time);
+  if (mode === "structure") return <TimeSeries times={times} title="末端世界位置" unit="m"
+    series={["X", "Y", "Z"].map((name,i) => ({name, values: samples.map(s => s.tool_position?.[i])}))} />;
+  if (mode === "jacobian") return <TimeSeries times={times} title="末端速度大小" unit="m/s" series={[
+    {name: "雅可比预测", values: samples.map(s => Math.hypot(...(s.cartesian_velocity ?? [0,0,0])))},
+    {name: "位置差分观测", values: samples.map(s => Math.hypot(...(s.measured_cartesian_velocity ?? [0,0,0])))}]} />;
+  if (mode === "grasp" || mode === "physics") return <TimeSeries times={times}
+    title={mode === "grasp" ? "方块高度" : "观测量"} unit={mode === "grasp" ? "m" : unit}
+    series={[{name: "实际值", values: samples.map(s => mode === "grasp" ? s.cube_height ?? s.cube_position?.[2] : s.value)}]} />;
+  const series = [{name: "实际", values: samples.map(s => s.joints?.[joint] ?? s.value)}];
+  if (["joint-control", "ik", "trajectory"].includes(mode)) series.push(
+    {name: "参考", values: samples.map(s => s.reference_joints?.[joint])},
+    {name: "终点目标", values: samples.map(s => s.target_joints?.[joint])});
+  return <><TimeSeries times={times} title={"关节 " + (joint+1)} unit="rad" series={series} />
+    {mode === "joint-control" && <TimeSeries times={times} title="执行器力矩" unit="N·m"
+      series={[{name: "关节 " + (joint+1), values: samples.map(s => s.actuator_torque?.[joint])}]} />}
+    {mode === "trajectory" && <TimeSeries times={times} title="参考跟踪误差" unit="rad"
+      series={[{name: "参考 − 实际", values: samples.map(s => s.reference_joints && s.joints ? s.reference_joints[joint]-s.joints[joint] : null)}]} />}
+  </>;
 }
 type ControlsProps = {
   mode: string;
@@ -770,16 +687,22 @@ export function Readings({
           </p>
         </div>
       )}
+      {["joint-control", "trajectory"].includes(mode) && <p className="experiment-phase">{s.phase}</p>}
       <div className="readings-grid">
-        <div>
+        {["structure", "ik", "grasp", "gravity"].includes(mode) && <div>
           <span>末端世界位置 / m</span>
           <strong>{s.tool_position.map((v) => num(v, 3)).join(" · ")}</strong>
-        </div>
-        <div>
+        </div>}
+        {["structure", "grasp"].includes(mode) && <div>
           <span>夹爪实际开口 / m</span>
           <strong>{num(s.gripper_width, 4)}</strong>
-        </div>
-        {["structure", "joint-control", "ik", "trajectory"].includes(mode) && (
+        </div>}
+        {["joint-control", "trajectory"].includes(mode) && <>
+          <div><span>关节 {joint+1} 实际 / rad</span><strong>{num(s.joints[joint],4)}</strong></div>
+          <div><span>关节 {joint+1} 参考 / rad</span><strong>{num(s.reference_joints[joint],4)}</strong></div>
+          <div><span>关节 {joint+1} 执行器力矩 / N·m</span><strong>{num(s.actuator_torque[joint],3)}</strong></div>
+        </>}
+        {["joint-control", "ik", "trajectory"].includes(mode) && (
           <div>
             <span>参考跟踪误差 / rad</span>
             <strong>
@@ -829,7 +752,7 @@ export function Readings({
         </div>
       )}
       {["structure", "fk", "ik"].includes(mode) && (
-        <details>
+        <details open={mode === "structure"}>
           <summary>末端旋转矩阵 R</summary>
           <Matrix values={s.tool_rotation} />
         </details>

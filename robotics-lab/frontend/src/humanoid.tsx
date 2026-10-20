@@ -1,5 +1,6 @@
 import { useState } from "react";
-import type { HumanoidObservation, HumanoidSettings, Settings } from "./types";
+import { TimeSeries } from "./timeseries";
+import type { HumanoidObservation, HumanoidSettings, Sample, Settings } from "./types";
 
 const number = (x: number | undefined, digits = 3) => x === undefined ? "—" : x.toFixed(digits);
 
@@ -13,23 +14,37 @@ export function HumanoidControls({ settings, set, mode }: {
       onChange={e => set({ ...settings, humanoid: { ...h, [key]: +e.target.value } })} /></label>;
   }
   return <section className="panel controls g1-controls"><div className="panel-heading"><h3>实验参数</h3></div>
-    {!["g1-walking", "g1-recovery"].includes(mode) && <>
-      {field("squat", "下蹲增量 / rad", 0, .35, .025)}
-      {field("lean", "前倾目标 / rad", -.12, .12, .01)}
-      {field("shift", "侧倾目标 / rad", -.12, .12, .01)}
+    {mode === "g1-structure" && field("squat", "下蹲增量 / rad", 0, .35, .025)}
+    {mode === "g1-contact" && <>
+      {field("lean", "前倾关节增量 / rad", -.12, .12, .01)}
+      {field("shift", "侧倾关节增量 / rad", -.12, .12, .005)}
     </>}
-    {["g1-walking", "g1-recovery"].includes(mode) && h.command.map((v, i) =>
+    {mode === "g1-balance" && <>
+      {field("squat", "下蹲增量 / rad", 0, .35, .025)}
+      {field("lean", "前倾关节增量 / rad", -.12, .12, .01)}
+      {field("shift", "侧倾关节增量 / rad", -.12, .12, .005)}
+      {field("friction", "地面滑动摩擦系数", .1, 2, .1)}
+    </>}
+    {["g1-walking", "g1-recovery"].includes(mode) && h.command.map((v,i) =>
       <label className="g1-field" key={i}><span>{["前进 / m·s⁻¹", "侧移 / m·s⁻¹", "转向 / rad·s⁻¹"][i]}</span>
-        <input type="number" value={v} min={-([.8, .3, .8][i])} max={[.8, .3, .8][i]} step={.05}
-          onChange={e => set({ ...settings, humanoid: { ...h, command: h.command.map((x, j) => j === i ? +e.target.value : x) } })} />
+        <input type="number" value={v} min={-[.8,.3,.8][i]} max={[.8,.3,.8][i]} step={.05}
+          onChange={e => set({...settings, humanoid: {...h, command: h.command.map((x,j) => j === i ? +e.target.value : x)}})} />
       </label>)}
     {field("duration", "运动过渡时间 / s", 1, 8, .5)}
-    {field("friction", "地面滑动摩擦系数", .1, 2, .1)}
     {mode === "g1-recovery" && <>
       {field("push_force", "外力峰值 / N", -100, 100, 5)}
       {field("push_duration", "施力时长 / s", .1, 2, .1)}
+      {field("friction", "地面滑动摩擦系数", .1, 2, .1)}
       {field("payload", "机身附加载荷 / kg", 0, 5, .5)}
     </>}
+    {["g1-structure", "g1-contact", "g1-walking"].includes(mode) && <details><summary>其他实验参数</summary>
+      {mode === "g1-structure" && <>
+        {field("lean", "前倾关节增量 / rad", -.12, .12, .01)}
+        {field("shift", "侧倾关节增量 / rad", -.12, .12, .005)}
+      </>}
+      {mode === "g1-contact" && field("squat", "下蹲增量 / rad", 0, .35, .025)}
+      {field("friction", "地面滑动摩擦系数", .1, 2, .1)}
+    </details>}
     <p className="panel-note">应用参数后连续运动。暂停时仅更新目标，单步或继续后执行。</p>
   </section>;
 }
@@ -62,46 +77,76 @@ function SupportPlot({ state }: { state: HumanoidObservation }) {
   </svg><p className="panel-note">地面俯视 · 支撑区域取实际受力接触点。几何距离仅用于静态、准静态分析。</p></div>;
 }
 
-export function HumanoidReadings({ state, live }: { state: HumanoidObservation | null; live: boolean }) {
-  if (!state) return <section className="panel"><div className="panel-heading"><h3>人形状态观测</h3></div><p className="panel-note">打开交互实验或运行独立验证后显示观测。</p></section>;
-  return <section className="panel g1-readings"><div className="panel-heading"><h3>人形状态观测</h3><span>{live ? "实时" : "独立结果"} · {number(state.time, 2)} s</span></div>
+const FOCUS: Record<string,string> = {
+  "g1-structure": "基座位姿与关节运动", "g1-contact": "质心投影与足底承重",
+  "g1-balance": "站立倾角与支撑变化", "g1-walking": "速度指令与策略执行",
+  "g1-recovery": "外力扰动与恢复过程",
+};
+
+export function HumanoidReadings({state, live, mode}: {state: HumanoidObservation | null; live: boolean; mode: string}) {
+  if (!state) return <section className="panel g1-readings"><h3>{FOCUS[mode]}</h3><p className="panel-note">打开交互实验或运行独立验证后显示观测。</p></section>;
+  const stance = ["g1-contact", "g1-balance"].includes(mode);
+  const metric = (name: string, value: number | undefined, digits = 3) => <div key={name}><dt>{name}</dt><dd>{number(value,digits)}</dd></div>;
+  return <section className="panel g1-readings"><div className="panel-heading"><h3>{FOCUS[mode]}</h3><span>{live ? "实时" : "独立结果"} · {number(state.time,2)} s</span></div>
     <p className="panel-note" role="status">{state.phase}{state.fallen ? " · 已跌倒，可恢复初态" : ""}{live && state.age_seconds > 2 ? " · 观测更新延迟" : ""}</p>
     <dl className="g1-metrics">
-      <div><dt>基座高度 / m</dt><dd>{number(state.base_position[2])}</dd></div>
-      <div><dt>机身倾角 / °</dt><dd>{number(state.tilt_rad*180/Math.PI, 2)}</dd></div>
-      <div><dt>左脚支撑 / N</dt><dd>{number(state.foot_forces[0][2], 1)}</dd></div>
-      <div><dt>右脚支撑 / N</dt><dd>{number(state.foot_forces[1][2], 1)}</dd></div>
-      <div><dt>静态几何距离 / m</dt><dd>{state.support_margin_m === null ? "接触不足" : number(state.support_margin_m)}</dd></div>
-      <div><dt>位移 / m</dt><dd>{number(state.displacement_m)}</dd></div>
+      {mode === "g1-structure" && <>{metric("基座高度 / m",state.base_position[2])}{metric("左膝实际角 / rad",state.joints[3])}{metric("左膝参考角 / rad",state.reference_joints[3])}{metric("机身倾角 / °",state.tilt_rad*180/Math.PI,2)}</>}
+      {stance && <>{metric("左脚支撑 / N",state.foot_forces[0][2],1)}{metric("右脚支撑 / N",state.foot_forces[1][2],1)}
+        {metric("竖直支撑合力 / N",state.foot_forces[0][2]+state.foot_forces[1][2],1)}{metric("全身重力 / N",state.weight_N,1)}
+        <div><dt>静态几何距离 / m</dt><dd>{state.support_margin_m === null ? "接触不足" : number(state.support_margin_m)}</dd></div>
+        {metric("机身倾角 / °",state.tilt_rad*180/Math.PI,2)}</>}
+      {mode === "g1-walking" && <>{metric("平滑前进指令 / m·s⁻¹",state.command[0])}{metric("实际前进速度 / m·s⁻¹",state.body_velocity[0])}{metric("平面位移 / m",state.displacement_m)}{metric("机身倾角 / °",state.tilt_rad*180/Math.PI,2)}</>}
+      {mode === "g1-recovery" && <>{metric("当前外力 / N",state.push_force_N,1)}{metric("已记录外力幅值峰值 / N",Math.max(0,...(state.push_trace ?? []).map(p=>Math.abs(p[1]))),1)}{metric("机身倾角 / °",state.tilt_rad*180/Math.PI,2)}{metric("本次峰值倾角 / °",state.max_tilt_rad*180/Math.PI,2)}{metric("实际前进速度 / m·s⁻¹",state.body_velocity[0])}{metric("平面位移 / m",state.displacement_m)}</>}
     </dl>
-    <SupportPlot state={state} />
-    <dl className="g1-vectors">
-      <dt>基座位置 / m</dt><dd>{state.base_position.map(v => number(v)).join(" / ")}</dd>
-      <dt>基座四元数 / wxyz</dt><dd>{state.base_quaternion.map(v => number(v)).join(" / ")}</dd>
-      <dt>质心位置 / m</dt><dd>{state.com.map(v => number(v)).join(" / ")}</dd>
-      <dt>机身速度 / m·s⁻¹</dt><dd>{state.body_velocity.map(v => number(v)).join(" / ")}</dd>
+    {stance && <SupportPlot state={state} />}
+    {mode === "g1-structure" && <dl className="g1-vectors"><dt>基座位置 / m</dt><dd>{state.base_position.map(v => number(v)).join(" / ")}</dd><dt>基座四元数 / wxyz</dt><dd>{state.base_quaternion.map(v => number(v)).join(" / ")}</dd></dl>}
+    <details><summary>完整机身与接触观测</summary>
+      {!stance && <SupportPlot state={state} />}
+      <dl className="g1-vectors"><dt>质心位置 / m</dt><dd>{state.com.map(v => number(v)).join(" / ")}</dd><dt>机身速度 / m·s⁻¹</dt><dd>{state.body_velocity.map(v => number(v)).join(" / ")}</dd><dt>左右脚竖直支撑 / N</dt><dd>{state.foot_forces.map(f => number(f[2],1)).join(" / ")}</dd>
       {state.policy_active && <><dt>请求命令 / vx, vy, wz</dt><dd>{state.requested_command.map(v => number(v)).join(" / ")}</dd><dt>平滑命令 / vx, vy, wz</dt><dd>{state.command.map(v => number(v)).join(" / ")}</dd></>}
-      <dt>当前外力 / N</dt><dd>{number(state.push_force_N, 1)}</dd>
-    </dl>
-    <details><summary>12 路关节状态与力矩</summary><div className="g1-table-scroll"><table className="joint-table"><thead><tr><th>关节</th><th>实际 / rad</th><th>参考 / rad</th><th>目标 / rad</th><th>力矩 / N·m</th></tr></thead>
-      <tbody>{state.joints.map((q,i) => <tr key={i}><td>{state.joint_names[i].replace("_joint", "")}</td><td>{number(q)}</td><td>{number(state.reference_joints[i])}</td><td>{number(state.target_joints[i])}</td><td>{number(state.actuator_torque[i], 2)}</td></tr>)}</tbody></table></div></details>
+      <dt>当前外力 / N</dt><dd>{number(state.push_force_N,1)}</dd></dl>
+    </details>
+    <details><summary>12 路关节状态与力矩</summary><div className="g1-table-scroll"><table className="joint-table"><thead><tr><th>关节</th><th>实际 / rad</th><th>参考 / rad</th><th>目标 / rad</th><th>力矩 / N·m</th></tr></thead><tbody>
+      {state.joints.map((q,i) => <tr key={i}><td>{state.joint_names[i].replace("_joint", "")}</td><td>{number(q)}</td><td>{number(state.reference_joints[i])}</td><td>{number(state.target_joints[i])}</td><td>{number(state.actuator_torque[i],2)}</td></tr>)}
+    </tbody></table></div></details>
     {state.policy_active && <details><summary>学习策略输入输出（47 → LSTM → 12）</summary><p className="panel-note">观测：角速度 3、重力方向 3、命令 3、位置偏差 12、速度 12、上一动作 12、相位 2。</p><p className="g1-array">输入：{state.policy_observation.map(v => number(v)).join(", ")}</p><p className="g1-array">动作：{state.policy_action.map(v => number(v)).join(", ")}</p></details>}
   </section>;
 }
 
-export function HumanoidChart({ samples }: { samples: { time: number; base_position?: number[]; command?: number[]; body_velocity?: number[]; joints?: number[]; reference_joints?: number[]; target_joints?: number[] }[] }) {
-  const [view, setView] = useState("body");
-  if (samples.length < 2) return <div className="empty-chart">运行后显示基座高度、前进命令与实际速度。</div>;
-  const joint = Number(view);
-  const series = view === "body" ? [samples.map(s => s.base_position?.[2] ?? 0), samples.map(s => s.command?.[0] ?? 0), samples.map(s => s.body_velocity?.[0] ?? 0)]
-    : [samples.map(s => s.joints?.[joint] ?? 0), samples.map(s => s.reference_joints?.[joint] ?? 0), samples.map(s => s.target_joints?.[joint] ?? 0)];
-  const values = series.flat(), lo = Math.min(0, ...values), span = Math.max(.1, Math.max(...values)-lo);
-  const elapsed = Math.max(.002, samples.at(-1)!.time-samples[0].time);
-  return <div className="chart"><label className="g1-field"><span>观测曲线</span><select value={view} aria-label="人形观测曲线" onChange={e => setView(e.target.value)}><option value="body">基座与速度</option>{samples[0].joints?.map((_,i) => <option key={i} value={i}>关节 {i+1}</option>)}</select></label><div className="chart-caption"><span>{view === "body" ? "基座高度 / m · 速度 / m·s⁻¹" : `关节 ${joint+1} / rad`}</span><span>{view === "body" ? "绿：高度　橙：命令　蓝：实际速度" : "绿：实际　橙：连续参考　蓝：目标"}</span></div>
-    <svg viewBox="0 0 640 170" role="img" aria-label={view === "body" ? "基座高度、前进命令和实际速度曲线" : "关节实际角度、连续参考与目标曲线"}>
-      {[30,85,140].map(y => <path key={y} d={`M45 ${y}H625`} className="chart-grid" />)}
-      {series.map((values,k) => <path key={k} fill="none" stroke={["#247b69", "#cd603f", "#3f79b5"][k]} strokeWidth="2"
-        d={values.map((v,i) => `${i ? "L" : "M"}${45+(samples[i].time-samples[0].time)/elapsed*580},${140-(v-lo)/span*110}`).join(" ")} />)}
-      <text x="5" y="30">{number(lo+span,2)}</text><text x="5" y="140">{number(lo,2)}</text><text x="45" y="163">{number(samples[0].time,1)} s</text><text x="570" y="163">{number(samples.at(-1)!.time,1)} s</text>
-    </svg></div>;
+type HumanSample = Sample;
+const DEFAULT_VIEW: Record<string,string> = {"g1-structure": "structure", "g1-contact": "contact", "g1-balance": "balance", "g1-walking": "velocity", "g1-recovery": "recovery"};
+export function HumanoidChart({samples, mode}: {samples: HumanSample[]; mode: string}) {
+  const [selected, setSelected] = useState<string | null>(null);
+  const view = selected ?? DEFAULT_VIEW[mode];
+  const times = samples.map(s => s.time);
+  const applied = new Map<number,number>();
+  if (view === "recovery") {
+    for (const sample of samples) for (const [time,force] of sample.push_trace ?? []) {
+      if (time >= times[0] && time <= times.at(-1)!) applied.set(time,force);
+    }
+    if (applied.size > 1) {
+      applied.set(times[0],samples[0].push_force_N ?? 0);
+      applied.set(times.at(-1)!,samples.at(-1)?.push_force_N ?? 0);
+    }
+  }
+  const forceTrace = [...applied].sort((a,b) => a[0]-b[0]);
+  const plot = (title: string, unit: string, series: {name: string; value: (s: HumanSample) => number | null | undefined}[]) =>
+    <TimeSeries times={times} title={title} unit={unit} series={series.map(s => ({name:s.name,values:samples.map(s.value)}))} />;
+  const tilt = () => plot("机身倾角", "°", [{name:"实际倾角",value:s => s.tilt_rad == null ? null : s.tilt_rad*180/Math.PI}]);
+  const velocity = () => <>{[0,1].map(i => <div key={i}>{plot(i === 0 ? "前进速度" : "侧移速度","m/s",[{name:"平滑指令",value:s => s.command?.[i]},{name:"实际速度",value:s => s.body_velocity?.[i]}])}</div>)}</>;
+  return <div className="g1-charts"><label className="g1-field"><span>观测曲线</span><select value={view} aria-label="人形观测曲线" onChange={e => setSelected(e.target.value)}>
+    <option value="structure">基座高度与膝关节</option><option value="contact">足底承重与质心</option><option value="balance">倾角与支撑距离</option><option value="velocity">速度指令与实际速度</option><option value="recovery">外力与恢复过程</option>
+    {samples[0]?.joints?.map((_,i) => <option key={i} value={String(i)}>关节 {i+1}</option>)}
+  </select></label>
+    {view === "structure" && <>{plot("基座高度","m",[{name:"实际高度",value:s => s.base_position?.[2]}])}{plot("左膝关节","rad",[{name:"实际",value:s => s.joints?.[3]},{name:"连续参考",value:s => s.reference_joints?.[3]},{name:"终点目标",value:s => s.target_joints?.[3]}])}</>}
+    {view === "contact" && <>{plot("足底竖直支撑","N",[{name:"左脚",value:s => s.foot_forces?.[0]?.[2]},{name:"右脚",value:s => s.foot_forces?.[1]?.[2]},{name:"全身重力",value:s => s.weight_N}])}
+      {plot("质心平面位移（相对首个采样）","m",[0,1].map(i => ({name:i === 0 ? "前后 X" : "左右 Y",value:(s:HumanSample) => s.com && samples[0]?.com ? s.com[i]-samples[0].com[i] : null})))}</>}
+    {view === "balance" && <>{tilt()}{plot("静态几何距离","m",[{name:"质心投影到接触凸包",value:s => s.support_margin_m}])}<p className="panel-note">接触不足时曲线留空；该距离仅用于静态、准静态分析。</p></>}
+    {view === "velocity" && velocity()}
+    {view === "recovery" && <>{forceTrace.length > 1
+      ? <TimeSeries times={forceTrace.map(p=>p[0])} title="外力包络（物理线程记录）" unit="N" series={[{name:"机身沿世界 X 方向受力",values:forceTrace.map(p=>p[1])}]} />
+      : plot("外力包络","N",[{name:"机身沿世界 X 方向受力",value:s => s.push_force_N}])}
+      {tilt()}{plot("扰动前后前进速度","m/s",[{name:"平滑指令",value:s => s.command?.[0]},{name:"实际速度",value:s => s.body_velocity?.[0]}])}</>}
+    {Number.isInteger(Number(view)) && plot("关节 " + (Number(view)+1),"rad",[{name:"实际",value:s => s.joints?.[Number(view)]},{name:"连续参考",value:s => s.reference_joints?.[Number(view)]},{name:"终点目标",value:s => s.target_joints?.[Number(view)]}])}
+  </div>;
 }

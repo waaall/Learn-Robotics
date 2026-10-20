@@ -1275,3 +1275,9 @@ summary {
 .g1-array { font: 11px/1.7 monospace; overflow-wrap: anywhere; }
 .g1-table-scroll { max-width: 100%; overflow-x: auto; }
 .g1-readings details { margin-top: 16px; font-size: 12px; }
+.g1-controls details { font-size: 12px; margin-top: 14px; }
+.g1-field select { max-width: 65%; min-width: 0; padding: 7px; font: inherit; }
+.series-legend { display: flex; flex-wrap: wrap; gap: 12px; justify-content: flex-end; }
+.series-legend > span { white-space: nowrap; }
+.time-series + .time-series, .g1-charts .time-series { margin-top: 18px; }
+.time-series .chart-caption { flex-wrap: wrap; gap: 6px 12px; }

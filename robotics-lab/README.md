@@ -2,6 +2,8 @@
 
 机器人交互实验室。以“课程 → 课时 → 实验”组织原理讲解、公式、交互仿真和结果分析。整体产品需求见 [整体需求](docs/demand/overall-demand.md)，课程实现见 [课程与 Panda 适配](docs/design/courses.md)。项目与 `experiments/` 独立，不依赖其硬件、模型、策略、数据或运行环境。
 
+各课采用独立的默认实验参数与观测重点；打开实验、恢复初态和独立计算共用课时预设。轨迹课在点击执行后开始运动。验证记录见 [课时预设与观测验收](docs/validation/lesson-presets.md)。
+
 ## 支持平台与快速启动
 
 以下为完整功能的部署目标，实际测试结果见 [跨平台验证记录](docs/validation/deployment.md)：

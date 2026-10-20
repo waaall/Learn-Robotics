@@ -13,6 +13,7 @@ export type Lesson = {
   observations: string[];
   exercise: string;
   sources: { title: string; url: string }[];
+  default_settings?: Partial<Settings>;
 };
 export type Course = {
   id: string;
@@ -91,11 +92,19 @@ export type Sample = {
   base_position?: number[];
   command?: number[];
   body_velocity?: number[];
+  com?: number[];
+  foot_forces?: number[][];
+  weight_N?: number;
+  tilt_rad?: number;
+  support_margin_m?: number | null;
+  push_force_N?: number;
+  push_trace?: number[][];
   time: number;
   value?: number;
   joints?: number[];
   reference_joints?: number[];
   target_joints?: number[];
+  actuator_torque?: number[];
   joint_error?: number;
   cube_height?: number;
   cube_position?: number[];
@@ -135,31 +144,13 @@ export const LIMITS = [
 export const GEOMETRIC = ["jacobian"];
 export const canonicalLessonId = (id: string) =>
   id === "panda-fk" ? "panda-structure" : id;
-export function defaults(mode = "structure"): Settings {
-  return {
-    ...(mode.startsWith("g1-") ? { humanoid: {
-      squat: 0, lean: 0, shift: 0, duration: 3, command: [0.3, 0, 0],
-      friction: 1, push_force: 20, push_duration: 0.4, payload: 0,
-    } } : {}),
-    joints: [...HOME],
-    target: [0.45, 0.12, 0.42],
-    gripper_width: 0.08,
-    gain_scale: ["structure", "joint-control", "ik", "trajectory"].includes(
-      mode,
-    )
-      ? 0.2
-      : 1,
-    damping_scale: ["structure", "joint-control", "ik", "trajectory"].includes(
-      mode,
-    )
-      ? Math.sqrt(0.2)
-      : 1,
-    compensation: true,
-    velocity: mode === "jacobian" ? [0, 0.05, 0, 0, 0, 0, 0] : Array(7).fill(0),
-    profile: "quintic",
-    friction: 1,
-  };
+export function defaults(lesson?: Lesson): Settings {
+  // 加载课程前只提供空表单；所有实验参数由课程 API 提供。
+  return { joints: [], target: [0, 0, 0], gripper_width: 0,
+    gain_scale: 1, damping_scale: 1, compensation: true, velocity: [],
+    profile: "quintic", friction: 1, ...structuredClone(lesson?.default_settings ?? {}) };
 }
+export const defaultJoint = (mode: string) => ["structure", "gravity", "jacobian"].includes(mode) ? 1 : 0;
 export const num = (value: number, digits = 4) => value.toFixed(digits);
 
 export type HumanoidSettings = {
@@ -172,6 +163,8 @@ export type HumanoidObservation = {
   velocities: number[]; actuator_torque: number[];
   base_position: number[]; base_quaternion: number[]; base_velocity: number[]; body_velocity: number[];
   com: number[]; support_polygon: number[][]; support_margin_m: number | null; foot_forces: number[][];
+  weight_N: number;
+  push_trace: number[][];
   tilt_rad: number; max_tilt_rad: number; contacts: number; fallen: boolean; displacement_m: number;
   command: number[]; requested_command: number[]; policy_active: boolean; policy_observation: number[];
   policy_action: number[]; push_force_N: number; settings: HumanoidSettings;

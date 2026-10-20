@@ -25,7 +25,7 @@ PANDA_LESSONS = [
               "formula": r"{}^WT_E(\boldsymbol q)=\prod_i {}^{i-1}T_i(q_i)=\begin{bmatrix}R&p\\0&1\end{bmatrix}"},
              {"title": "连续运动与夹爪", "text": "输入角度作为位置伺服目标，沿用关节位置控制课的动力学执行方式；默认控制参数与重力补偿使运动过程可观察。夹爪开口是左右手指滑动量之和，范围为 0 至 0.08 m。",
               "formula": r"\boldsymbol p(t)=f_p(\boldsymbol q(t)),\qquad w=q_{f1}+q_{f2}"}],
-            ["打开实验，旋转相机识别基座、七个关节、夹爪和末端坐标轴。", "记录初始末端位置，将关节 2 增加 0.1 rad，点击移动到目标，观察运动过程。", "恢复初态，再改变关节 4，对照末端位置、朝向和实际关节角；最后改变夹爪开口。"],
+            ["打开实验，默认关节 2 从初态增加 0.1 rad；旋转相机识别基座、七个关节、夹爪和末端坐标轴。", "观察末端 X、Y、Z 位置曲线与旋转矩阵，再修改关节 2 目标并点击移动到目标。", "恢复初态会重新应用本课默认目标。改变关节 4，对照末端位置与朝向；最后改变夹爪开口。"],
             ["目标与实际关节角随时间的变化，单位 rad", "世界坐标系中的末端位置与旋转矩阵", "各关节限位与夹爪实际开口"],
             "比较关节 2 与关节 4 的运动对末端位置和朝向的影响；恢复相同构型后核对末端位姿。", "无需前置课程"),
     _lesson("panda-joint-control", "关节位置控制与动态响应", "joint-control", "位置反馈和速度反馈怎样影响跟踪过程？",
@@ -34,7 +34,7 @@ PANDA_LESSONS = [
               "formula": r"\tau_i=K_{p,i}(q_{d,i}-q_i)-K_{d,i}\dot q_i"},
              {"title": "独立调节反馈参数", "text": "位置增益倍率 a 与阻尼倍率 b 分别乘上游 Kp、Kd。默认 a=0.2、b=√0.2。先保持重力补偿开启，每次只改变一个倍率，并从相同初态重复实验。实际响应也受惯性、关节阻尼和力矩限幅影响。",
               "formula": r"K_p'=aK_p,\qquad K_d'=bK_d"}],
-            ["保持重力补偿开启，设置关节 1 的目标为 0.2 rad，移动到目标并观察曲线。", "恢复初态，保持阻尼倍率不变，比较位置增益倍率 0.1 与 0.5。", "再次恢复初态，固定位置增益，改变阻尼倍率，比较响应和力矩。"],
+            ["打开实验，默认关节 1 跟踪 0.2 rad 目标；观察实际、参考、终点目标及执行器力矩曲线。", "恢复初态，保持阻尼倍率不变，比较位置增益倍率 0.1 与 0.5；每次调整后移动到目标。", "再次恢复初态，固定位置增益，改变阻尼倍率，比较响应和力矩。"],
             ["目标角度与实际角度，单位 rad", "关节跟踪误差与实际执行器力矩", "分别改变位置增益和阻尼后的响应变化"],
             "保持同一目标和初态，分别改变位置增益、阻尼，说明响应时间和误差的变化。", "机械臂结构与正运动学"),
     _lesson("panda-gravity", "机械臂自重与重力补偿", "gravity", "支撑机械臂当前姿态需要哪些关节力矩？",
@@ -74,7 +74,7 @@ PANDA_LESSONS = [
               "formula": r"q_d(t)=q_0+s(u)(q_1-q_0),\quad s(u)=10u^3-15u^4+6u^5,\quad u=t/3"},
              {"title": "参考与跟踪", "text": "每个物理步更新轨迹参考，再由位置伺服执行。曲线中的最终关节目标与轨迹中间参考有不同含义；记录同时保存实际状态与跟踪过程。本课不进行碰撞规划。",
               "formula": r"e(t)=q_d(t)-q(t)"}],
-            ["修改终点关节角度，选择五次插值。", "点击执行轨迹，观察三秒运动和关节曲线。", "恢复初态，使用线性插值和相同终点重复实验。"],
+            ["默认终点为关节 1 = 0.3 rad、关节 2 = 0.2 rad，其余保持初态；打开实验后等待执行，编辑终点不会提前移动。", "点击执行轨迹，观察三秒五次插值、实际跟踪和误差曲线；暂停时需单步或继续执行。", "恢复初态，选择线性插值和相同终点重复实验。"],
             ["实际关节角度与参考角度", "运动期间的轨迹跟踪误差", "改变增益后实际响应的变化"],
             "比较两种插值在运动开始和结束附近的响应。", "关节位置控制、逆运动学与冗余", 4.0),
     _lesson("panda-grasp", "夹爪接触与抓取", "grasp", "夹爪怎样通过接触抬起并放置方块？",
@@ -105,13 +105,20 @@ def courses():
             "steps": ["打开交互实验，使用窗口中的暂停与步进观察运动。", "运行独立验证，观察曲线并下载记录。", "恢复初态，重复观察并对照计算结果。"],
             "observations": list(exp.observations), "exercise": "对照运动过程与曲线，解释主要变化发生的时刻。",
             "sources": [{"title": "MuJoCo 计算接口", "url": FUNCTION_SOURCE}]})
+    from .panda import default_settings as panda_defaults
+    from .humanoid import default_settings as humanoid_defaults
+    panda_lessons, humanoid_lessons = deepcopy(PANDA_LESSONS), deepcopy(HUMANOID_LESSONS)
+    for item in panda_lessons:
+        item["default_settings"] = panda_defaults(item["mode"])
+    for item in humanoid_lessons:
+        item["default_settings"] = {"humanoid": humanoid_defaults(item["mode"])}
     return [{"id": "panda-basics", "title": "Panda 机械臂基础", "subtitle": "从关节构型到接触抓取",
              "robot": "Franka Emika Panda", "level": "基础 → 进阶", "description": "原理讲解与交互实验并行，逐节研究机械臂的几何、动力学和控制。",
-             "lessons": deepcopy(PANDA_LESSONS)},
+             "lessons": panda_lessons},
             {"id": "humanoid-basics", "title": "人形机器人：站立、平衡与学习控制",
              "subtitle": "浮动基座、足底接触与学习策略", "robot": "Unitree G1（12 驱动关节）",
              "level": "基础 → 学习控制", "description": "连续运动、真实接触与可观察的学习策略执行。",
-             "lessons": deepcopy(HUMANOID_LESSONS)},
+             "lessons": humanoid_lessons},
             {"id": "physics-basics", "title": "基础物理实验", "subtitle": "动力学与接触的基本现象",
              "robot": "基础机构", "level": "基础", "description": "通过单摆与落球建立运动、能量和接触的观察方法。",
              "lessons": physics_lessons}]

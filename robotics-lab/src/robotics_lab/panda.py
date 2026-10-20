@@ -194,8 +194,10 @@ class PandaController:
                 self.phase = "IK 已收敛 · 正在跟踪关节目标"
             else:
                 self.phase = "IK 未收敛 · 保留上一有效关节目标"
-        if not task_active:
+        if not task_active and self.mode != "trajectory":
             self.reference_q = self.target_q.copy()
+        if self.mode == "trajectory" and self.motion is None:
+            self.phase = "终点已设置 · 等待执行轨迹"
         if self.mode == "gravity":
             self.phase = "补偿开启 · 观察构型保持" if self.compensation else "补偿关闭 · 观察自重下落"
         self._marker()
@@ -276,7 +278,8 @@ class PandaController:
             data.time += dt
             mujoco.mj_forward(model, data)
             return
-        target_q = self._grasp_target() if self.task else self.target_q
+        target_q = self._grasp_target() if self.task else (
+            self.reference_q if self.mode == "trajectory" else self.target_q)
         if self.motion:
             u = float(np.clip((data.time - self.motion["start"]) / self.motion["duration"], 0, 1))
             blend = u if self.profile == "linear" else 10*u**3 - 15*u**4 + 6*u**5
@@ -360,20 +363,28 @@ class PandaController:
 
 
 def default_settings(mode):
-    if mode == "ik":
-        return {"target": [0.45, 0.12, 0.42]}
-    if mode in {"structure", "joint-control", "trajectory"}:
-        q = HOME.copy()
+    """网页、交互重置与独立计算共用的课时参数；初态仍由模型关键帧定义。"""
+    q = HOME.copy()
+    if mode == "structure":
+        q[1] += 0.1
+    elif mode == "joint-control":
+        q[0] = 0.2
+    elif mode == "trajectory":
         q[0], q[1] = 0.3, 0.2
-        return {"joints": q.tolist()}
-    if mode == "jacobian":
-        return {"velocity": [0, 0.05, 0, 0, 0, 0, 0]}
-    return {}
+    gain = 0.2 if mode in {"structure", "joint-control", "ik", "trajectory"} else 1.0
+    return {"joints": q.tolist(), "target": [0.45, 0.12, 0.42], "gripper_width": 0.08,
+            "gain_scale": gain, "damping_scale": math.sqrt(gain), "compensation": True,
+            "velocity": [0, 0.05, 0, 0, 0, 0, 0] if mode == "jacobian" else [0]*7,
+            "profile": "quintic", "friction": 1.0}
 
 
 def simulate_panda(experiment, model, data, duration, settings):
     controller = PandaController(model, data, experiment.mode)
-    controller.configure(settings if settings is not None else default_settings(experiment.mode))
+    effective = {**default_settings(experiment.mode), **(settings or {})}
+    # 保留旧调用只传位置增益时自动配对阻尼的语义。
+    if settings and "gain_scale" in settings and "damping_scale" not in settings:
+        effective.pop("damping_scale")
+    controller.configure(effective)
     if experiment.mode == "trajectory":
         controller.start_motion()
     elif experiment.mode == "grasp":
@@ -394,6 +405,8 @@ def simulate_panda(experiment, model, data, duration, settings):
             samples.append({"time": float(data.time), "value": float(data.qpos[0]),
                             "joints": state["joints"], "tool_position": state["tool_position"],
                             "reference_joints": state["reference_joints"],
+                            "target_joints": state["target_joints"],
+                            "actuator_torque": state["actuator_torque"],
                             "cartesian_velocity": state["cartesian_velocity"],
                             "measured_cartesian_velocity": state["measured_cartesian_velocity"],
                             "joint_error": error, "cube_height": state["cube_position"][2]})
@@ -412,6 +425,6 @@ def simulate_panda(experiment, model, data, duration, settings):
                        ik_solution_error_m=state["ik"]["position_error_m"])
     elif experiment.mode == "grasp":
         metrics["max_cube_height_m"] = controller.max_cube_height
-    return {"samples": samples, "state": state, "settings": settings if settings is not None else default_settings(experiment.mode),
+    return {"samples": samples, "state": state, "settings": effective,
             "metrics": metrics,
             "model_sha256": fingerprint(experiment.model_path)}
