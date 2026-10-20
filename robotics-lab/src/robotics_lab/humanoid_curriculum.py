@@ -4,7 +4,7 @@ REVISION = "276801e46c5d433564f24658bac64f254b7d2d4b"
 SOURCE = f"https://github.com/unitreerobotics/unitree_rl_gym/tree/{REVISION}"
 
 
-def lesson(identifier, title, question, summary, concepts, steps, observations, exercise, prerequisite, duration=8):
+def lesson(identifier, title, question, summary, concepts, steps, observations, exercise, prerequisite, duration=8, *, sources=()):
     return {"id": identifier, "experiment_id": identifier, "title": title, "mode": identifier,
             "adapter": "humanoid", "status": "available", "question": question, "summary": summary,
             "concepts": [{"title": name, "text": text, "formula": formula} for name, text, formula in concepts],
@@ -13,13 +13,13 @@ def lesson(identifier, title, question, summary, concepts, steps, observations, 
             "sources": [{"title": "Unitree 官方模型、策略及部署配置（固定版本）", "url": SOURCE},
                         {"title": "MuJoCo 接触与动力学", "url": "https://mujoco.readthedocs.io/en/stable/computation/"},
                         {"title": "Real-World Humanoid Locomotion with Reinforcement Learning（Science Robotics 2024）",
-                         "url": "https://doi.org/10.1126/scirobotics.adi9579"}]}
+                         "url": "https://doi.org/10.1126/scirobotics.adi9579"}, *sources]}
 
 
 HUMANOID_LESSONS = [
     lesson("g1-structure", "结构与浮动基座", "机身运动和关节运动怎样共同构成人形机器人的状态？",
            "通过连续下蹲与姿态调整，观察机身、双腿和地面接触共同产生的运动。",
-           [("模型与状态", "本课使用 Unitree 官方 G1 12 驱动关节模型：双腿各六关节，上身固定。自由基座有六个速度自由度；姿态用单位四元数表示，因此 nq=19、nv=18、nu=12。基座没有直接驱动器。",
+           [("模型与状态", "本课使用 Unitree 官方 G1 双腿模型：每腿六个单轴关节，每个关节配置一个仿真力矩执行器，共 12 个驱动关节，上身固定。机器人结构和仿真模型定义物理自由度与执行器数量。自由基座另有三维平移和三维转动共六个自由度，由接触与动力学产生运动，没有直接驱动器。因此 nv=18、nu=12；四元数用四个数表示三维姿态，使位置坐标数 nq=19。",
              r"q=(p_b,Q_b,q_j),\quad v=(v_b,\omega_b,\dot q_j)"),
             ("连续执行", "调整参数只更新目标。五次参考保留切换时的位置、速度和加速度，关节 PD 产生力矩，由 MuJoCo 积分；基座位置和姿态由动力学产生。仅恢复初态直接重置状态。",
              r"\tau=K_p(q_{\rm ref}-q_j)-K_d\dot q_j")],
@@ -45,14 +45,22 @@ HUMANOID_LESSONS = [
            ["机身倾角、基座高度与实际跌倒状态", "左右脚承重与质心投影", "目标、连续参考和实际角度曲线"],
            "找出一个能够保持站立和一个发生失稳的配置，说明关节角跟踪误差为何不足以单独评价平衡。", "质心与足底接触"),
     lesson("g1-walking", "学习策略控制行走", "学习策略怎样把状态和速度指令变成双腿动作？",
-           "运行官方预训练循环策略，观察速度指令、47 维输入、12 维动作与 PD 执行。",
-           [("已公开的策略接口", "Unitree 固定版本的策略为 LSTM(47→64)、Linear(64→32)、ELU、Linear(32→12)。输入包含角速度、重力方向、速度命令、关节位置偏差、关节速度、上一动作与步态相位。权重保持固定；本课运行推理，不执行训练。",
+           "加载针对双腿 12 个关节训练的行走策略，区分机器人自由度、策略动作空间与已训练技能。",
+           [("训练任务与动作能力", "本课权重用于速度跟踪，接受前进、侧移和转向命令。策略的动作能力取决于训练任务、数据或奖励、机器人动力学及输入输出接口；同一种网络结构可训练出不同技能，增加输出维度本身不会产生新技能。本课没有上肢动作或跌倒起身指令；前面站姿课的下蹲由人工设置关节目标并通过 PD 执行。",
+             r"u_t=(v_x^{\rm cmd},v_y^{\rm cmd},\omega_z^{\rm cmd}),\qquad a_t=\pi_\theta(o_t)"),
+            ("自由度、执行器与策略动作", "机器人结构决定可动关节与物理自由度；训练时定义的动作空间及部署映射决定策略控制哪些执行器。本课 12 维动作按固定关节顺序一一映射到双腿 12 个关节的位置偏移，再由 PD 生成 12 路力矩。基座的六个自由度没有对应电机。其他策略可输出末端目标等控制量，动作维数与电机数量需按具体执行接口核对。",
+             r"a_t\in\mathbb{R}^{12}\longrightarrow q_d\in\mathbb{R}^{12}\longrightarrow\tau\in\mathbb{R}^{12},\qquad n_v=12+6=18"),
+            ("已公开的策略接口", "Unitree 固定版本的策略为 LSTM(47→64)、Linear(64→32)、ELU、Linear(32→12)。输入包含角速度、重力方向、速度命令、关节位置偏差、关节速度、上一动作与步态相位。权重保持固定；本课运行推理，不执行训练。改用腿、腰、双臂可动的完整模型时，需要匹配其状态、动作定义、关节顺序和执行参数的策略及控制器，并重新验证；当前权重只生成双腿目标。",
              r"(a_t,h_t,c_t)=\pi(o_t,h_{t-1},c_{t-1})"),
             ("策略与物理执行", "策略以 50 Hz 更新，动作为默认姿态的关节偏移，缩放系数 0.25。课程在相邻目标间作连续插值，PD 和 2 ms 物理步执行实际运动。启动以一秒混合过渡接入策略，速度指令按设定时长变化；停止时将速度命令平滑降到零并保留策略反馈。",
              r"q_d=q_0+0.25a_t,\qquad\tau=K_p(q_{\rm ref}-q_j)-K_d\dot q_j")],
            ["保持默认前进速度 0.3 m/s，点击启动学习策略。", "观察请求速度、平滑命令和实际机身速度，再检查输入和动作数组。", "运动中改速度或转向；点击平滑减速，观察命令趋于零与真实停止过程。"],
-           ["请求、平滑速度指令和实际机身速度", "47 维策略输入、12 维动作及循环状态的作用", "足底交替接触、倾角和真实位移"],
-           "比较 0.2 和 0.5 m/s 指令下的实际速度与足底接触，记录误差和失稳情况。", "双脚站立与重心转移", 10),
+           ["请求、平滑速度指令和实际机身速度", "47 维策略输入、12 维动作及循环状态的作用", "按关节名称对应策略动作、目标角与执行器力矩；上身固定，基座随动力学运动", "足底交替接触、倾角和真实位移"],
+           "比较 0.2 和 0.5 m/s 指令下的实际速度与足底接触，记录误差和失稳情况；说明相同权重接收不同速度命令与重新训练新技能的区别。", "双脚站立与重心转移", 10,
+           sources=[{"title": "本课 G1 的关节与执行器定义（固定版本）", "url": f"https://github.com/unitreerobotics/unitree_rl_gym/blob/{REVISION}/resources/robots/g1_description/g1_12dof.xml"},
+                    {"title": "G1 训练任务、动作维数与奖励配置（固定版本）", "url": f"https://github.com/unitreerobotics/unitree_rl_gym/blob/{REVISION}/legged_gym/envs/g1/g1_config.py"},
+                    {"title": "动作到关节目标及 PD 力矩的部署映射（固定版本）", "url": f"https://github.com/unitreerobotics/unitree_rl_gym/blob/{REVISION}/deploy/deploy_mujoco/deploy_mujoco.py"},
+                    {"title": "RT-2：末端动作接口示例（CoRL 2023，§3.2）", "url": "https://arxiv.org/html/2307.15818v1"}]),
     lesson("g1-recovery", "扰动与恢复", "有限时长外力、摩擦和载荷变化会怎样影响策略？",
            "在同一预训练策略下改变实验条件，测量扰动后的倾角、位移和跌倒。",
            [("连续外力", "施力作用在 pelvis 上，沿世界 x 轴，使用正弦平方包络平滑启动和结束。不会通过修改速度或机身位置制造冲量；数值验证在第 4 s 施力，交互实验由按钮触发。",
