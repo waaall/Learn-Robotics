@@ -13,7 +13,10 @@ class CourseStudio(step_control.StepControl):
     def __init__(self, model, data, mode: str, bridge: Path, adapter="panda"):
         super().__init__()
         self.adapter = adapter
-        if adapter == "humanoid":
+        if adapter == "microduck":
+            from .microduck import MicroduckController
+            self.controller = MicroduckController(model, data, mode)
+        elif adapter == "humanoid":
             from .humanoid import HumanoidController
             self.controller = HumanoidController(model, data, mode)
         else:
@@ -58,7 +61,8 @@ class CourseStudio(step_control.StepControl):
         try:
             action = request["action"]
             common = {"reset", "configure", "pause", "step"}
-            specific = ({"walk", "walk-stop", "push"} if self.adapter == "humanoid" else
+            specific = ({"walk", "walk-stop", "push", "sit", "stand"} if self.adapter == "microduck" else
+                        {"walk", "walk-stop", "push"} if self.adapter == "humanoid" else
                         {"gravity-release", "gravity-hold", "jacobian-run", "jacobian-stop", "trajectory", "grasp"})
             if action not in common | specific:
                 raise ValueError("该课程不支持此操作")
@@ -85,11 +89,13 @@ class CourseStudio(step_control.StepControl):
             elif action == "grasp":
                 self.controller.start_grasp()
             elif action in {"walk", "walk-stop", "push"}:
-                if not self.controller.mode.startswith("g1-"):
-                    raise ValueError("该操作仅支持人形课程")
                 self.controller.configure(request.get("settings", {}))
                 {"walk": self.controller.start_walk, "walk-stop": self.controller.stop_walk,
                  "push": self.controller.push}[action]()
+                self.step_control.set_pause_state(sim.PauseState.UNPAUSED)
+            elif action in {"sit", "stand"}:
+                self.controller.configure(request.get("settings", {}))
+                self.controller.set_posture(action == "sit")
                 self.step_control.set_pause_state(sim.PauseState.UNPAUSED)
             elif action == "pause":
                 paused = request.get("paused", True)
@@ -111,7 +117,9 @@ class CourseStudio(step_control.StepControl):
         return True
 
     def _apply_lesson_defaults(self):
-        if self.adapter == "humanoid":
+        if self.adapter == "microduck":
+            from .microduck import default_settings
+        elif self.adapter == "humanoid":
             from .humanoid import default_settings
         else:
             from .panda import default_settings

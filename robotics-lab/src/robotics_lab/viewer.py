@@ -23,7 +23,7 @@ def main() -> None:
     model, data = load_model(experiment)
     config = viewer_protocol.ViewerConfig(title="Robotics Lab", gfx="web", http_port=args.port)
     plugins = [step_control.StepControl(), sim_history.SimHistory()]
-    controlled = experiment.adapter in {"panda", "humanoid"}
+    controlled = experiment.adapter in {"panda", "humanoid", "microduck"}
     if controlled:
         from .studio import CourseStudio
         if args.bridge is None:

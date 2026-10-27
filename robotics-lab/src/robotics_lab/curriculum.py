@@ -107,11 +107,16 @@ def courses():
             "sources": [{"title": "MuJoCo 计算接口", "url": FUNCTION_SOURCE}]})
     from .panda import default_settings as panda_defaults
     from .humanoid import default_settings as humanoid_defaults
+    from .microduck import default_settings as microduck_defaults
+    from .microduck_curriculum import MICRODUCK_LESSONS
     panda_lessons, humanoid_lessons = deepcopy(PANDA_LESSONS), deepcopy(HUMANOID_LESSONS)
     for item in panda_lessons:
         item["default_settings"] = panda_defaults(item["mode"])
     for item in humanoid_lessons:
         item["default_settings"] = {"humanoid": humanoid_defaults(item["mode"])}
+    microduck_lessons = deepcopy(MICRODUCK_LESSONS)
+    for item in microduck_lessons:
+        item["default_settings"] = {"microduck": microduck_defaults(item["mode"])}
     return [{"id": "panda-basics", "title": "Panda 机械臂基础", "subtitle": "从关节构型到接触抓取",
              "robot": "Franka Emika Panda", "level": "基础 → 进阶", "description": "原理讲解与交互实验并行，逐节研究机械臂的几何、动力学和控制。",
              "lessons": panda_lessons},
@@ -119,6 +124,10 @@ def courses():
              "subtitle": "浮动基座、足底接触与学习策略", "robot": "Unitree G1（12 驱动关节）",
              "level": "基础 → 学习控制", "description": "连续运动、真实接触与可观察的学习策略执行。",
              "lessons": humanoid_lessons},
+            {"id": "microduck-basics", "title": "Microduck：小型双足与学习控制",
+             "subtitle": "头颈运动、接触与强化学习策略", "robot": "Microduck（14 驱动关节仿真模型）",
+             "level": "基础 → 学习控制", "description": "从关节与舵机到行走、坐站和扰动实验。",
+             "lessons": microduck_lessons},
             {"id": "physics-basics", "title": "基础物理实验", "subtitle": "动力学与接触的基本现象",
              "robot": "基础机构", "level": "基础", "description": "通过单摆与落球建立运动、能量和接触的观察方法。",
              "lessons": physics_lessons}]

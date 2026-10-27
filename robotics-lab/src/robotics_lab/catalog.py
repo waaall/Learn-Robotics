@@ -64,6 +64,16 @@ def catalog() -> dict[str, Experiment]:
                         "observable_index": 2, "observable_name": "基座高度", "observable_unit": "m",
                         "explanation": lesson["summary"], "observations": lesson["observations"],
                         "adapter": "humanoid", "mode": lesson["mode"]})
+    from .microduck_curriculum import MICRODUCK_LESSONS
+    from .microduck import HOME as MICRODUCK_HOME
+    for lesson in MICRODUCK_LESSONS:
+        entries.append({"id": lesson["id"], "title": lesson["title"], "topic": "Microduck 双足机器人",
+                        "robot": "Microduck（14 驱动关节仿真模型）", "summary": lesson["summary"],
+                        "model": "microduck_course.xml", "qpos": [0, 0, .12, 1, 0, 0, 0, *MICRODUCK_HOME.tolist()],
+                        "initial_ctrl": [0.]*len(MICRODUCK_HOME), "duration": lesson["duration"],
+                        "observable_index": 2, "observable_name": "基座高度", "observable_unit": "m",
+                        "explanation": lesson["summary"], "observations": lesson["observations"],
+                        "adapter": "microduck", "mode": lesson["mode"]})
     for entry in entries:
         entry["qpos"] = tuple(entry["qpos"])
         entry["observations"] = tuple(entry["observations"])

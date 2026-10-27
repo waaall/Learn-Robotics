@@ -3,6 +3,7 @@ import { useEffect, useReducer, useRef, useState } from "react";
 import { HumanoidActions, HumanoidChart, HumanoidControls, HumanoidReadings } from "./humanoid";
 import { createObservationLog, reduceObservationLog } from "./observations";
 import { SystemRequests } from "./system-requests";
+import { MicroduckActions, MicroduckChart, MicroduckControls, MicroduckReadings } from "./microduck";
 import {
   Chart,
   Controls,
@@ -19,11 +20,12 @@ import {
   type Course,
   type Observation,
   type HumanoidObservation,
+  type MicroduckObservation,
   type Run,
   type Session,
   type System,
 } from "./types";
-type RobotObservation = Observation | HumanoidObservation;
+type RobotObservation = Observation | HumanoidObservation | MicroduckObservation;
 const NEW_TRIAL_ACTIONS = new Set(["reset", "gravity-release", "gravity-hold", "jacobian-run"]);
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
@@ -120,15 +122,19 @@ export function App() {
     mode = lesson?.mode || "structure",
     panda = lesson?.adapter === "panda",
     humanoid = lesson?.adapter === "humanoid",
-    controlled = panda || humanoid;
+    microduck = lesson?.adapter === "microduck",
+    controlled = panda || humanoid || microduck;
   const ready =
     session?.status === "ready" &&
     session.experiment_id === lesson?.experiment_id;
   const viewerUrl = session?.url;
   const latest = state || run?.state;
   const pandaLatest = latest && !("robot" in latest) ? latest : null;
-  const humanoidLatest = latest && "robot" in latest ? latest : null;
-  const controlPanel = humanoid && settings.humanoid ? (
+  const humanoidLatest = latest && "robot" in latest && latest.robot === "g1" ? latest : null;
+  const microduckLatest = latest && "robot" in latest && latest.robot === "microduck" ? latest : null;
+  const controlPanel = microduck && settings.microduck ? (
+    <MicroduckControls mode={mode} settings={settings} set={setSettings} />
+  ) : humanoid && settings.humanoid ? (
     <HumanoidControls mode={mode} settings={settings} set={setSettings} />
   ) : (
     <Controls
@@ -280,7 +286,7 @@ export function App() {
     if (!id) throw new Error("请先打开交互实验");
     const result = await request<RobotObservation>(
       "/api/sessions/current/commands",
-      post({ session_id: id, action, settings: humanoid ? settings.humanoid : settings, ...extra }),
+      post({ session_id: id, action, settings: microduck ? settings.microduck : humanoid ? settings.humanoid : settings, ...extra }),
     );
     actions.current.push({
       action,
@@ -598,6 +604,7 @@ export function App() {
                         <h3>
                           {panda
                             ? "Panda 机械臂实验工作台"
+                            : microduck ? "Microduck 双足机器人实验工作台"
                             : humanoid ? "G1 人形机器人实验工作台"
                             : "基础物理实验工作台"}
                         </h3>
@@ -626,7 +633,7 @@ export function App() {
                     aria-label="实验观测与参数"
                   >
                     {mode === "jacobian" && controlPanel}
-                    {humanoid ? <HumanoidReadings mode={mode} state={humanoidLatest} live={!!state} /> : <Readings
+                    {microduck ? <MicroduckReadings mode={mode} state={microduckLatest} live={!!state} /> : humanoid ? <HumanoidReadings mode={mode} state={humanoidLatest} live={!!state} /> : <Readings
                       state={pandaLatest ?? undefined}
                       mode={mode}
                       live={!!state}
@@ -636,6 +643,8 @@ export function App() {
                   </aside>
                 )}
               </div>
+              {microduck && <MicroduckActions mode={mode} ready={ready} busy={!!busy}
+                paused={!!state?.paused} act={action => void control(action)} />}
               {humanoid && <HumanoidActions mode={mode} ready={ready} busy={!!busy}
                 paused={!!state?.paused} act={action => void control(action)} />}
               {panda && (
@@ -674,7 +683,7 @@ export function App() {
                       </button>
                     </div>
                   </div>
-                  {humanoid ? <HumanoidChart key={selected} mode={mode} samples={history} /> : <Chart
+                  {microduck ? <MicroduckChart key={selected} mode={mode} samples={history} /> : humanoid ? <HumanoidChart key={selected} mode={mode} samples={history} /> : <Chart
                     samples={history.map((s) => ({
                       ...s,
                       cube_height: "cube_position" in s ? s.cube_position[2] : 0,
@@ -706,7 +715,7 @@ export function App() {
                           "/api/runs",
                           post({
                             experiment_id: lesson!.experiment_id,
-                            settings: humanoid ? settings.humanoid : panda ? settings : null,
+                            settings: microduck ? settings.microduck : humanoid ? settings.humanoid : panda ? settings : null,
                           }),
                         ),
                       );
@@ -721,7 +730,7 @@ export function App() {
               </p>
               {run && (
                 <>
-                  {humanoid ? <HumanoidChart key={selected} mode={mode} samples={run.samples} /> : <Chart
+                  {microduck ? <MicroduckChart key={selected} mode={mode} samples={run.samples} /> : humanoid ? <HumanoidChart key={selected} mode={mode} samples={run.samples} /> : <Chart
                     samples={run.samples}
                     joint={joint}
                     mode={mode}

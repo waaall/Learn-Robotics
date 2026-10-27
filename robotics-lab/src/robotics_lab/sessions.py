@@ -129,7 +129,7 @@ class SessionManager:
             session = self.session
             if not session or session.id != identifier or session.process.poll() is not None:
                 raise ValueError("课程会话已改变，请重新打开实验")
-            if get_experiment(session.experiment_id).adapter not in {"panda", "humanoid"}:
+            if get_experiment(session.experiment_id).adapter not in {"panda", "humanoid", "microduck"}:
                 raise ValueError("该实验使用官方窗口中的操作控件")
             identifier = str(uuid4())
             request = {**request, "id": identifier}

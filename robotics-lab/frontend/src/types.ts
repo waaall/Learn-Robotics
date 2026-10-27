@@ -116,11 +116,12 @@ export type Sample = {
 export type Run = {
   id: string;
   samples: Sample[];
-  state?: Observation | HumanoidObservation;
+  state?: Observation | HumanoidObservation | MicroduckObservation;
   metrics: Record<string, number>;
   experiment: { observable_name: string; observable_unit: string };
 };
 export type Settings = {
+  microduck?: MicroduckSettings;
   humanoid?: HumanoidSettings;
   joints: number[];
   target: number[];
@@ -170,4 +171,14 @@ export type HumanoidObservation = {
   tilt_rad: number; max_tilt_rad: number; contacts: number; fallen: boolean; displacement_m: number;
   command: number[]; requested_command: number[]; policy_active: boolean; policy_observation: number[];
   policy_action: number[]; push_force_N: number; settings: HumanoidSettings;
+};
+
+export type MicroduckSettings = {
+  joint_index: number; joint_offset: number; head: number[]; shift: number;
+  duration: number; command: number[]; friction: number; voltage: number;
+  push_force: number; push_duration: number;
+};
+export type MicroduckObservation = Omit<HumanoidObservation, "robot" | "settings" | "base_velocity"> & {
+  robot: "microduck"; settings: MicroduckSettings; servo_kp: number;
+  sitting: boolean; posture_command: number;
 };

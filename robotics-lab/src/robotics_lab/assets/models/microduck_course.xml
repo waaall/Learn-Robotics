@@ -1,0 +1,16 @@
+<mujoco model="microduck_course">
+  <include file="microduck/robot_groundcontact.xml"/>
+  <option timestep="0.002" integrator="implicitfast" gravity="0 0 -9.81"/>
+  <visual>
+    <headlight diffuse="0.7 0.7 0.7" ambient="0.4 0.4 0.4"/>
+    <global azimuth="140" elevation="-20"/>
+  </visual>
+  <asset>
+    <texture name="course_grid" type="2d" builtin="checker" width="256" height="256" rgb1="0.82 0.85 0.83" rgb2="0.72 0.77 0.74"/>
+    <material name="course_floor" texture="course_grid" texrepeat="16 16" texuniform="true"/>
+  </asset>
+  <worldbody>
+    <light pos="0 -1 2" dir="0 0 -1" directional="true"/>
+    <geom name="ground" type="plane" size="0 0 .05" friction="1 .005 .0001" material="course_floor"/>
+  </worldbody>
+</mujoco>

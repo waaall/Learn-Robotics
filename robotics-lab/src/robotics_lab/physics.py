@@ -17,6 +17,13 @@ def load_model(experiment: Experiment):
     if mujoco.__version__ != MUJOCO_VERSION or mujoco.mj_versionString() != MUJOCO_VERSION:
         raise RuntimeError(f"物理实验要求 MuJoCo {MUJOCO_VERSION}")
     spec = mujoco.MjSpec.from_file(str(experiment.model_path))
+    if experiment.adapter == "microduck":
+        from .microduck_actuator import prepare_spec
+        for mesh in spec.meshes:
+            mesh.file = str(experiment.model_path.parent / "microduck" / "assets" / Path(mesh.file).name)
+        prepare_spec(spec)
+        spec.body("trunk_base").add_camera(name="course_follow", mode=mujoco.mjtCamLight.mjCAMLIGHT_TRACKCOM,
+                                            pos=[.45, -.65, .32], xyaxes=[.822, .569, 0, -.212, .306, .928])
     if experiment.adapter == "humanoid":
         for mesh in spec.meshes:
             mesh.file = str(experiment.model_path.parent / "g1" / "meshes" / Path(mesh.file).name)
@@ -43,7 +50,7 @@ def load_model(experiment: Experiment):
                           fromto=start + end, size=[0.002]*3, rgba=color)
     spec.add_key(name="experiment_initial", time=0, qpos=list(experiment.qpos), ctrl=list(experiment.initial_ctrl))
     model = spec.compile()
-    if experiment.adapter == "humanoid":
+    if experiment.adapter in {"humanoid", "microduck"}:
         model.vis.global_.cameraid = model.camera("course_follow").id
     data = mujoco.MjData(model)
     key = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_KEY, "experiment_initial")
@@ -55,9 +62,11 @@ def load_model(experiment: Experiment):
 def simulate(experiment: Experiment, duration: float | None = None, settings: dict | None = None) -> dict:
     model, data = load_model(experiment)
     duration = experiment.duration if duration is None else duration
-    if experiment.adapter in {"panda", "humanoid"}:
+    if experiment.adapter in {"panda", "humanoid", "microduck"}:
         if experiment.adapter == "panda":
             from .panda import simulate_panda as simulate_robot
+        elif experiment.adapter == "microduck":
+            from .microduck import simulate_microduck as simulate_robot
         else:
             from .humanoid import simulate_humanoid as simulate_robot
         result = simulate_robot(experiment, model, data, duration, settings)

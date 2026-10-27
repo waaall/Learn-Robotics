@@ -83,7 +83,7 @@ def check_service(base: str) -> dict:
                         break
                 else:
                     raise AssertionError("WebSocket 未收到二进制仿真状态")
-            if experiment["adapter"] in {"panda", "humanoid"}:
+            if experiment["adapter"] in {"panda", "humanoid", "microduck"}:
                 def command(action):
                     return request("/api/sessions/current/commands", {
                         "session_id": session["id"], "action": action, "paused": True})

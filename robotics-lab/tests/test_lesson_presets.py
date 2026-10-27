@@ -38,7 +38,7 @@ class LessonPresetTests(unittest.TestCase):
                     if lesson["adapter"] == "basic":
                         continue
                     preset = lesson["default_settings"]
-                    expected = preset.get("humanoid", preset)
+                    expected = preset.get(lesson["adapter"], preset)
                     record = client.post("/api/runs", json={
                         "experiment_id": lesson["id"], "duration": .01}).json()
                     self.assertEqual(record["settings"], expected, lesson["id"])
@@ -83,6 +83,8 @@ class LessonPresetTests(unittest.TestCase):
                     preset = lesson["default_settings"]
                     if lesson["adapter"] == "humanoid":
                         self.assertEqual(studio.controller.settings, preset["humanoid"])
+                    elif lesson["adapter"] == "microduck":
+                        self.assertEqual(studio.controller.settings, preset["microduck"])
                     elif lesson["mode"] != "ik":
                         np.testing.assert_allclose(studio.controller.target_q, preset["joints"])
                     else:

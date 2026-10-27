@@ -32,7 +32,7 @@ class ObservationSequenceTests(unittest.TestCase):
 
     def test_sequence_increases_across_pause_step_and_both_reset_paths(self):
         with tempfile.TemporaryDirectory() as directory:
-            for identifier in ("panda-structure", "g1-structure"):
+            for identifier in ("panda-structure", "g1-structure", "microduck-structure"):
                 with self.subTest(identifier=identifier):
                     studio = self.studio(identifier, directory)
                     studio.step_control.set_pause_state(sim.PauseState.NORMAL_PAUSED)

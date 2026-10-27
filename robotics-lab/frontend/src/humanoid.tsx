@@ -61,11 +61,11 @@ export function HumanoidActions({ mode, ready, busy, paused, act }: {
       disabled={!ready || busy} onClick={() => act(action)}>{title}</button>)}</div>;
 }
 
-function SupportPlot({ state }: { state: HumanoidObservation }) {
+export function SupportPlot({ state, minRadius = .22 }: { state: Pick<HumanoidObservation, "support_polygon" | "com">; minRadius?: number }) {
   const points = [...state.support_polygon, state.com.slice(0, 2)];
   const cx = points.reduce((a, p) => a + p[0], 0) / points.length;
   const cy = points.reduce((a, p) => a + p[1], 0) / points.length;
-  const radius = Math.max(.22, ...points.map(p => Math.max(Math.abs(p[0]-cx), Math.abs(p[1]-cy)))) * 1.2;
+  const radius = Math.max(minRadius, ...points.map(p => Math.max(Math.abs(p[0]-cx), Math.abs(p[1]-cy)))) * 1.2;
   const point = (p: number[]) => [160 - (p[1]-cy)*100/radius, 105 - (p[0]-cx)*90/radius];
   const com = point(state.com);
   return <div className="g1-support"><svg viewBox="0 0 320 210" role="img" aria-label="质心投影与实际足底接触区域">
