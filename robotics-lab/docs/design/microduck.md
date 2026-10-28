@@ -1,6 +1,6 @@
 # Microduck 课程实现
 
-日期：2026-10-27。课程与 `experiments/` 独立，新增六节课，复用 Robotics Lab 的目录、会话、查看器和观测导出机制。
+初版：2026-10-27；摩擦计算修复：2026-10-28。课程与 `experiments/` 独立，新增六节课，复用 Robotics Lab 的目录、会话、查看器和观测导出机制。
 
 ## 课程与资源
 
@@ -29,6 +29,8 @@ $$
 
 舵机模型适配 [Rhoban BAM 固定版本](https://github.com/Rhoban/bam/tree/62bd8ce12154340be97e06f7f41a0ca8f116d967) 的 XL330 M6。每个物理步计算 PWM 位置环、电压降、反电动势力矩及载荷相关摩擦预算。电压默认 7.35 V，电压降系数 0.1，最低有效电压 6 V；关闭电流限制，保持官方训练设置。该版本的零位拟合偏置不作为额外关节偏置加入，与官方 CPU 控制路径一致。课程未加入随机延迟、齿隙关节或参数随机化。
 
+计算外载时，从 `qfrc_constraint` 扣除各关节自身的摩擦约束力。`mjCNSTR_FRICTION_DOF` 的 `efc_id` 对应 DOF 编号，课程通过 `jnt_dofadr` 映射后筛选，避免浮动基座下关节编号与 DOF 编号不一致造成串用。此处修正了固定 BAM CPU 实现中的索引方式，M6 摩擦公式与参数保持不变。[MuJoCo 3.16 约束构造](https://github.com/google-deepmind/mujoco/blob/3.16.0/src/engine/engine_core_constraint.c#L1006-L1033)
+
 $$
 d=\mathrm{clip}\left(K_pk_e(q_d-q),-1,1\right),\qquad
 \tau=\frac{k_t}{R}\left(V_{\mathrm{eff}}d-k_t\dot q\right)
@@ -39,6 +41,8 @@ $$
 坐站策略使用离散姿态标志 `0/1`，写入 `twist.vx` 槽。切换标志时不重置关节位置或速度。测试发现，将标志插值为中间值会延迟坐下并在站起时倾倒，因此本课程遵循训练中的离散标志输入。独立验证在第 1 s 坐下，第 6 s 站起；交互由按钮触发。
 
 ## 接触与结果统计
+
+课程地面的 `priority=1` 高于官方机器人接触几何的默认优先级，使机器人与地面的接触摩擦直接采用地面配置。这样 `friction` 在 0.1—2 范围内均能作用于实际接触，且不修改机器人几何自身的摩擦系数及自碰撞配置。相同优先级下 MuJoCo 会逐项取双方摩擦系数的最大值，仅降低地面系数会被机器人默认值 1 覆盖。[MuJoCo 接触参数组合规则](https://mujoco.readthedocs.io/en/stable/modeling.html#contact-parameters)
 
 左右足底接触力由 `mj_contactForce` 获取并转换到世界坐标。支撑凸包取竖直力超过 0.02 N 的实际受力接触点。质心来自机器人根部子树；到接触凸包的最小有符号距离用于静态、准静态分析。坐姿包含机身接触时，足底支撑合力不代表全部地面支撑。
 

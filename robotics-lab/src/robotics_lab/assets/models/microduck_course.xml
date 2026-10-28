@@ -1,3 +1,4 @@
+<!-- Microduck 课程场景：保持官方机器人参数，单独配置地面与显示资源。 -->
 <mujoco model="microduck_course">
   <include file="microduck/robot_groundcontact.xml"/>
   <option timestep="0.002" integrator="implicitfast" gravity="0 0 -9.81"/>
@@ -11,6 +12,7 @@
   </asset>
   <worldbody>
     <light pos="0 -1 2" dir="0 0 -1" directional="true"/>
-    <geom name="ground" type="plane" size="0 0 .05" friction="1 .005 .0001" material="course_floor"/>
+    <!-- 地面优先级高于机器人默认值，使接触摩擦采用课程设置，包含低摩擦条件。 -->
+    <geom name="ground" type="plane" size="0 0 .05" priority="1" friction="1 .005 .0001" material="course_floor"/>
   </worldbody>
 </mujoco>

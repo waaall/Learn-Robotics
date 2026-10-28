@@ -1,4 +1,4 @@
-"""官方策略等价性、物理任务结果与跨课程操作隔离。"""
+"""官方策略等价性、接触与执行器摩擦、物理任务结果及跨课程操作隔离。"""
 import json
 from pathlib import Path
 import tempfile
@@ -11,6 +11,7 @@ import numpy as np
 from robotics_lab.api import create_app
 from robotics_lab.catalog import get_experiment
 from robotics_lab.microduck import ASSETS, HOME, MicroduckController, MicroduckPolicy, default_settings
+from robotics_lab.microduck_actuator import friction_budget
 from robotics_lab.physics import load_model, simulate
 from robotics_lab.studio import CourseStudio
 
@@ -61,6 +62,58 @@ class MicroduckTests(unittest.TestCase):
         self.advance(c, 4)
         self.assertAlmostEqual(c.state()["joints"][7], .25, delta=.03)
         self.assertFalse(c.state()["fallen"])
+
+    def test_actuator_removes_own_dof_friction_from_external_load(self):
+        c = self.controller("microduck-contact")
+        self.advance(c, .2)
+        m, d = c.model, c.data
+        self.assertTrue(np.any(c.joint_ids != c.vadr))
+        # 用约束雅可比投影取得独立对照，避免测试重复关节编号匹配错误。
+        friction_rows = d.efc_type == mujoco.mjtConstraint.mjCNSTR_FRICTION_DOF
+        constraint_forces = np.where(friction_rows, d.efc_force, 0.)
+        friction_forces = np.zeros(m.nv)
+        mujoco.mj_mulJacTVec(m, d, friction_forces, constraint_forces)
+        self.assertGreater(np.linalg.norm(friction_forces[c.vadr]), 1e-6)
+        external = -d.qfrc_bias[c.vadr] + d.qfrc_constraint[c.vadr] - friction_forces[c.vadr]
+        expected_friction, expected_damping = friction_budget(
+            d.qfrc_actuator[c.vadr], external, d.qvel[c.vadr])
+
+        c.actuator.update(c.reference_q)
+
+        np.testing.assert_allclose(m.dof_frictionloss[c.vadr], expected_friction, atol=1e-12, rtol=1e-12)
+        np.testing.assert_allclose(m.dof_damping[c.vadr], expected_damping, atol=1e-12, rtol=1e-12)
+
+    def test_ground_contact_friction_tracks_configuration_and_reset(self):
+        for mode in ("microduck-contact", "microduck-robustness"):
+            with self.subTest(mode=mode):
+                c = self.controller(mode)
+                self.advance(c, .2)
+                robot_geoms = np.arange(c.model.ngeom) != c.floor
+                original_friction = c.model.geom_friction[robot_geoms].copy()
+
+                def assert_contact_friction(expected):
+                    contacts = [contact for contact in c.data.contact
+                                if c.floor in (contact.geom1, contact.geom2)]
+                    self.assertTrue(contacts)
+                    # 验证求解器实际使用的两个切向系数，不能只检查地面配置。
+                    np.testing.assert_allclose([contact.friction[:2] for contact in contacts], expected)
+                    np.testing.assert_array_equal(c.model.geom_friction[robot_geoms], original_friction)
+
+                for coefficient in (.1, .5, 1., 2.):
+                    with self.subTest(coefficient=coefficient):
+                        before = c.data.qpos.copy(), c.data.qvel.copy(), c.data.time
+                        c.configure({"friction": coefficient})
+                        np.testing.assert_array_equal(c.data.qpos, before[0])
+                        np.testing.assert_array_equal(c.data.qvel, before[1])
+                        self.assertEqual(c.data.time, before[2])
+                        mujoco.mj_forward(c.model, c.data)
+                        assert_contact_friction(coefficient)
+                        self.advance(c, .02)
+                        assert_contact_friction(coefficient)
+
+                c.reset()
+                self.advance(c, .2)
+                assert_contact_friction(default_settings(mode)["friction"])
 
     def test_walk_stop_and_real_push(self):
         c = self.controller("microduck-robustness")

@@ -3,6 +3,7 @@
 Adapted from Rhoban/bam (actuator.py, model.py, mujoco.py).
 Copyright 2025 Marc Duclusaud & Grégoire Passault. Apache-2.0.
 课程只使用电压位置环、反电动势与 M6 摩擦；无训练依赖。
+课程按 MuJoCo 的 DOF 编号修正摩擦约束筛选，M6 公式与拟合参数保持不变。
 """
 import json
 from pathlib import Path
@@ -69,10 +70,10 @@ class MicroduckActuator:
         self.previous_torque = torque.copy()
         d.ctrl[:] = torque
         external = -d.qfrc_bias[self.vadr] + d.qfrc_constraint[self.vadr]
-        # qfrc_constraint 已含摩擦约束；从外载中扣除该项后再计算摩擦预算。
+        # 摩擦约束的 efc_id 使用 DOF 编号；扣除各自摩擦后再计算外载预算。
         friction_rows = d.efc_type == mujoco.mjtConstraint.mjCNSTR_FRICTION_DOF
-        for i, joint in enumerate(self.joints):
-            external[i] -= np.sum(d.efc_force[friction_rows & (d.efc_id == joint)])
+        for i, dof in enumerate(self.vadr):
+            external[i] -= np.sum(d.efc_force[friction_rows & (d.efc_id == dof)])
         friction, damping = friction_budget(d.qfrc_actuator[self.vadr], external, d.qvel[self.vadr])
         m.dof_frictionloss[self.vadr] = friction
         m.dof_damping[self.vadr] = damping
